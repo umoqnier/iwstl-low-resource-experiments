@@ -12,6 +12,44 @@ dependencies = [
     "pandas>=3.0.1",
     "pyarrow>=23.0.1",
     "requests>=2.32.5",
-    "torch>=2.10.0",
     "torchcodec>=0.10.0",
 ]
+
+
+[project.optional-dependencies]
+cpu = [
+  "torch>=2.10.0",
+  "torchvision>=0.24.1",
+]
+cu128 = [
+  "torch>=2.10.0",
+  "torchvision>=0.24.1",
+]
+
+[tool.uv]
+conflicts = [
+  [
+    { extra = "cpu" },
+    { extra = "cu128" },
+  ],
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu128", extra = "cu128" },
+]
+torchvision = [
+  { index = "pytorch-cpu", extra = "cpu" },
+  { index = "pytorch-cu128", extra = "cu128" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
