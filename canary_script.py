@@ -533,14 +533,14 @@ def main(
     adapter_dim = 8
     enc_adapter_cfg = LinearAdapterConfig(in_features=input_dim, dim=adapter_dim)
 
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total_params = sum(p.numel() for p in model.parameters())
-    logger.info(f"Trainable Parameters: {trainable_params:,} / {total_params:,} ({(trainable_params/total_params)*100:.3f}%)")
-
     # queremos solo habilitar el encoder
     model.add_adapter(name="encoder:enc", cfg=enc_adapter_cfg)
     model.freeze()
     model.unfreeze_enabled_adapters()
+
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total_params = sum(p.numel() for p in model.parameters())
+    logger.info(f"Trainable Parameters: {trainable_params:,} / {total_params:,} ({(trainable_params/total_params)*100:.3f}%)")
 
     # HF login
     logger.info("Logging into HuggingFace Hub...")
