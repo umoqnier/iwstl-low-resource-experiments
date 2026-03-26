@@ -3,13 +3,13 @@ import logging
 import os
 
 import click
+import datasets
 import lightning.pytorch as L
 import nemo.collections.asr as nemo_asr
 import soundfile as sf
 import torch
 import tqdm
 import yaml
-import datasets
 from datasets import load_dataset, load_dataset_builder
 from huggingface_hub import login
 from huggingface_hub import utils as hf_utils
@@ -17,7 +17,7 @@ from lhotse import CutSet
 from lhotse.cut import Cut
 from lhotse.dataset import AudioSamples
 from lhotse.dataset.collation import collate_vectors
-from lightning.pytorch.callbacks import ModelCheckpoint
+from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
 from nemo.collections.asr.data.audio_to_text_lhotse_prompted import (
     PromptedAudioToTextMiniBatch,
 )
@@ -452,10 +452,10 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
     help="Maximum number of examples to use per language (None for all)",
 )
 @click.option(
-    "--max-steps",
+    "--max-epochs",
     type=int,
-    default=200,
-    help="Maximum training steps",
+    default=100,
+    help="Maximum training epochs",
 )
 @click.option(
     "--streaming/--no-streaming",
@@ -492,7 +492,7 @@ def main(
     devices,
     batch_size,
     max_examples,
-    max_steps,
+    max_epochs,
     streaming,
     output_dir,
     data_dir,
@@ -573,7 +573,7 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
 
     # Generate output model name based on parameters
-    model_name_parts = ["canary", language_mode, f"bs{batch_size}", f"steps{max_steps}"]
+    model_name_parts = ["canary", language_mode, f"bs{batch_size}", f"steps{max_epochs}"]
     if max_examples:
         model_name_parts.append(f"max{max_examples}")
     adapter_model_name = "_".join(model_name_parts) + ".pt"
@@ -593,20 +593,29 @@ def main(
         save_last=True,  # Always saves a 'last.ckpt' to easily resume from crashes
     )
 
+    # 1. Setup Early Stopping
+    early_stop_callback = EarlyStopping(
+        monitor="val_loss",    # The metric PyTorch Lightning logs during validation
+        min_delta=0.00,        # Minimum change to qualify as an improvement
+        patience=5,            # How many validation checks to wait before stopping
+        verbose=True,
+        mode="min"             # We want the loss to minimize
+    )
+
     # Setup trainer
     logger.info("Setting up trainer...")
     trainer = L.Trainer(
         devices=devices,
-        max_steps=max_steps,
+        max_epochs=max_epochs,
         # Drastically reduces memory by using 16-bit floats for activations
         precision="bf16-mixed", # Mixed Precision
         # If we cut batch_size to 4, accumulating 4 batches gives an effective batch of 16
         accumulate_grad_batches=4,
         logger=False,
         enable_checkpointing=True,  # CRITICAL: Must be True to save checkpoints
-        check_val_every_n_epoch=5,
+        check_val_every_n_epoch=2,
         use_distributed_sampler=False,  # Keeps Lhotse distributed sampling happy
-        callbacks=[checkpoint_callback],
+        callbacks=[checkpoint_callback, early_stop_callback],
     )
 
     # Detect if a previous checkpoint exists
