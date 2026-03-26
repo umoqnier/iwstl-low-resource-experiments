@@ -200,6 +200,8 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
                 "shuffle": True,
                 "persistent_workers": True,
                 "pin_memory": True,  # speeds up CPU-to-GPU transfer
+                "min_duration": 1.0,
+                "max_duration": 20.0,
             }
         )
 
@@ -596,7 +598,9 @@ def main(
     trainer = L.Trainer(
         devices=devices,
         max_steps=max_steps,
-        precision="bf16-mixed",
+        # Drastically reduces memory by using 16-bit floats for activations
+        precision="bf16-mixed", # Mixed Precision
+        # If we cut batch_size to 4, accumulating 4 batches gives an effective batch of 16
         accumulate_grad_batches=4,
         logger=False,
         enable_checkpointing=True,  # CRITICAL: Must be True to save checkpoints
