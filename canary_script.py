@@ -1,8 +1,6 @@
 import itertools
 import logging
 import os
-# For bucketing dataset
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import click
 import datasets
@@ -197,16 +195,10 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         return self._setup_dataloader(
             {
                 "manifest_filepath": self.train_manifest,
-                "use_bucketing": True,
                 "num_buckets": 30,
-                "batch_duration": 40.0,  
-                "max_duration": 30.0,
-                "min_duration": 1.0,
-                #"batch_size": self.batch_size,
+                "batch_size": self.batch_size,
                 # 4 workers per GPU = 8 total. Fast, but RAM safe.
                 "num_workers": 4,
-                # Forces each worker to buffer only 2 batches at a time
-                "prefetch_factor": 2,
                 "shuffle": True,
                 "persistent_workers": True,
                 "pin_memory": True,  # speeds up CPU-to-GPU transfer
@@ -217,11 +209,8 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         return self._setup_dataloader(
             {
                 "manifest_filepath": self.val_manifest,
-                "use_bucketing": True,
-                "batch_duration": 80.0,
-                "max_duration": 30.0,
-                #"batch_size": self.batch_size,
-                "num_workers": 1,
+                "batch_size": self.batch_size,
+                "num_workers": 12,
                 "shuffle": False,
                 "persistent_workers": True,
                 "pin_memory": True,
@@ -465,7 +454,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
 @click.option(
     "--max-epochs",
     type=int,
-    default=100,
+    default=50,
     help="Maximum training epochs",
 )
 @click.option(
