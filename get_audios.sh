@@ -1,0 +1,5 @@
+git clone git@github.com:karolpiczak/ESC-50.git
+git clone git@github.com:Graphi07/room-impulse-responses.git
+cd room-impulse-responses
+./get_mit.sh mit
+./get_rwcp_reverb_air.sh rwcp

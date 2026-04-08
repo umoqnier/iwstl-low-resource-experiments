@@ -210,3 +210,6 @@ __marimo__/
 combined_data
 *.pt
 an4
+models/
+room-impulse-responses/
+ESC-50/
