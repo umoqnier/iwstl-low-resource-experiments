@@ -6,41 +6,42 @@ import click
 import datasets
 import lightning.pytorch as L
 import nemo.collections.asr as nemo_asr
+import numpy as np
 import soundfile as sf
 import torch
 import tqdm
 import yaml
-from datasets import load_dataset, load_dataset_builder
+from datasets import load_dataset
 from huggingface_hub import login
 from huggingface_hub import utils as hf_utils
 from lhotse import CutSet
 from lhotse.cut import Cut
 from lhotse.dataset import AudioSamples
 from lhotse.dataset.collation import collate_vectors
-from lightning.pytorch.callbacks import EarlyStopping, ModelCheckpoint
+from lightning.pytorch.callbacks import (
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+)
+from lightning.pytorch.loggers import TensorBoardLogger
 from nemo.collections.asr.data.audio_to_text_lhotse_prompted import (
     PromptedAudioToTextMiniBatch,
 )
 from nemo.collections.asr.parts.utils.manifest_utils import (
-    read_manifest,
     write_manifest,
 )
 from nemo.collections.common.data.lhotse import get_lhotse_dataloader_from_config
 from nemo.collections.common.data.prompt_fn import (
     get_prompt_format_fn,
-    # registered_prompt_format_fn,
 )
 from nemo.collections.common.parts import LinearAdapterConfig
 from nemo.collections.common.prompts import PromptFormatter
 from omegaconf import OmegaConf
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.progress import track
 from torch.utils.data import Dataset
 
 from custom_aumentation import augment
-import numpy as np
-
 
 # Set up rich logging
 console = Console()
@@ -579,7 +580,6 @@ def main(
     model.cfg.optim.lr = 3e-4
     model.cfg.optim.sched.warmup_steps = 25
 
-    # TODO: Agregar callback para sacar metricas de cada epoch
     # TODO: Dropout
 
     # Create output directory if it doesn't exist
@@ -620,6 +620,13 @@ def main(
         mode="min",  # We want the loss to minimize
     )
 
+    # This will create a directory called 'tb_logs' in your project root
+    tb_logger = TensorBoardLogger(
+        save_dir="tb_logs", 
+        name="canary_mapudungun_bs{batch_size}_epochs{max_epochs}"
+    )
+    # 2. Setup Learning Rate Monitor (Optional but very useful)
+    lr_monitor = LearningRateMonitor(logging_interval='step')
     # Setup trainer
     logger.info("Setting up trainer...")
     trainer = L.Trainer(
@@ -631,11 +638,11 @@ def main(
         precision="bf16-mixed",  # Mixed Precision
         # If we cut batch_size to 4, accumulating 4 batches gives an effective batch of 16
         accumulate_grad_batches=4,
-        logger=True,
+        logger=tb_logger,
         enable_checkpointing=True,  # CRITICAL: Must be True to save checkpoints
         check_val_every_n_epoch=2,
         use_distributed_sampler=False,  # Keeps Lhotse distributed sampling happy
-        callbacks=[checkpoint_callback, early_stop_callback],
+        callbacks=[checkpoint_callback, early_stop_callback, lr_monitor],
     )
 
     # Detect if a previous checkpoint exists
