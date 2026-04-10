@@ -10,7 +10,7 @@ import soundfile as sf
 import torch
 import tqdm
 import yaml
-from datasets import load_dataset
+from datasets import load_dataset, load_dataset_builder
 from huggingface_hub import login
 from huggingface_hub import utils as hf_utils
 from lhotse import CutSet
@@ -22,16 +22,25 @@ from nemo.collections.asr.data.audio_to_text_lhotse_prompted import (
     PromptedAudioToTextMiniBatch,
 )
 from nemo.collections.asr.parts.utils.manifest_utils import (
+    read_manifest,
     write_manifest,
 )
 from nemo.collections.common.data.lhotse import get_lhotse_dataloader_from_config
-from nemo.collections.common.data.prompt_fn import get_prompt_format_fn
+from nemo.collections.common.data.prompt_fn import (
+    get_prompt_format_fn,
+    # registered_prompt_format_fn,
+)
 from nemo.collections.common.parts import LinearAdapterConfig
 from nemo.collections.common.prompts import PromptFormatter
 from omegaconf import OmegaConf
 from rich.console import Console
 from rich.logging import RichHandler
+from rich.progress import track
 from torch.utils.data import Dataset
+
+from custom_aumentation import augment
+import numpy as np
+
 
 # Set up rich logging
 console = Console()
@@ -64,7 +73,6 @@ noisy_loggers = ["httpx", "httpcore", "urllib3", "fsspec", "filelock"]
 for logger_name in noisy_loggers:
     logging.getLogger(logger_name).setLevel(logging.WARNING)
 
-
 class MyCanaryPromptedAudioToTextLhotseDataset(Dataset):
     """
     This dataset is based on :class:`~nemo.collections.asr.data.audio_to_text_lhotse.LhotseSpeechToTextBpeDataset`.
@@ -94,6 +102,11 @@ class MyCanaryPromptedAudioToTextLhotseDataset(Dataset):
 
     def __getitem__(self, cuts: CutSet) -> PromptedAudioToTextMiniBatch:
         audio, audio_lens, cuts = self.load_audio(cuts)
+        audio_np = audio.numpy()
+        
+        augmented = [augment(samples=sample, sample_rate=16000) for sample in audio_np]
+        
+        audio = torch.from_numpy(np.stack(augmented))
         answers = []
         prompts = []
         prompts_with_answers = []
@@ -129,6 +142,7 @@ class MyCanaryPromptedAudioToTextLhotseDataset(Dataset):
         token_lens = torch.tensor([t.size(0) for t in tokens], dtype=torch.long)
         tokens = collate_vectors(tokens, padding_value=self.padding_value)
         return tokens, token_lens
+
 
 
 class CanaryMultilingualDataModule(L.LightningDataModule):
@@ -617,7 +631,7 @@ def main(
         precision="bf16-mixed",  # Mixed Precision
         # If we cut batch_size to 4, accumulating 4 batches gives an effective batch of 16
         accumulate_grad_batches=4,
-        logger=False,
+        logger=True,
         enable_checkpointing=True,  # CRITICAL: Must be True to save checkpoints
         check_val_every_n_epoch=2,
         use_distributed_sampler=False,  # Keeps Lhotse distributed sampling happy
