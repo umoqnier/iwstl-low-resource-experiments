@@ -610,7 +610,8 @@ def main(
     logger.info("Setting up trainer...")
     trainer = L.Trainer(
         devices=devices,
-        accelerator="dp",
+        accelerator="gpu",
+        strategy="ddp",
         max_epochs=max_epochs,
         # Drastically reduces memory by using 16-bit floats for activations
         precision="bf16-mixed",  # Mixed Precision
