@@ -99,13 +99,6 @@ def main(manifest, adapter_path, base_model, batch_size, max_samples, print_exam
     click.echo("Calculating metrics...")
     result = eval_model(preds, gt_texts)
     
-    click.echo("\n" + "=" * 40)
-    click.echo(" 📊 EVALUATION RESULTS")
-    click.echo("=" * 40)
-    click.echo(f" WER (Word Error Rate): {result['wer']:.4f}")
-    click.echo(f" SacreBLEU Score:       {result['bleu']:.4f}")
-    click.echo("=" * 40 + "\n")
-    
     # Random Examples
     if print_examples > 0 and len(preds) > 0:
         click.echo(f"🔍 Printing {min(print_examples, len(preds))} random examples:\n")
@@ -118,6 +111,13 @@ def main(manifest, adapter_path, base_model, batch_size, max_samples, print_exam
             click.echo(f"--- Example {i+1} ---")
             click.echo(f"GT:   {gt}")
             click.echo(f"Pred: {pred}\n")
+    
+    click.echo("\n" + "=" * 40)
+    click.echo(" 📊 EVALUATION RESULTS")
+    click.echo("=" * 40)
+    click.echo(f" WER (Word Error Rate): {result['wer']:.4f}")
+    click.echo(f" SacreBLEU Score:       {result['bleu']:.4f}")
+    click.echo("=" * 40 + "\n")
 
 
 if __name__ == '__main__':
