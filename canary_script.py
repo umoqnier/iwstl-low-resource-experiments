@@ -569,11 +569,14 @@ def main(
     model.cfg.optim.lr = 3e-4
     model.cfg.optim.sched.warmup_steps = 25
 
+    # TODO: Agregar callback para sacar metricas de cada epoch
+    # TODO: Dropout
+
     # Create output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
 
     # Generate output model name based on parameters
-    model_name_parts = ["canary", language_mode, f"bs{batch_size}", f"steps{max_epochs}"]
+    model_name_parts = ["canary", language_mode, f"bs{batch_size}", f"epoch{max_epochs}"]
     if max_examples:
         model_name_parts.append(f"max{max_examples}")
     adapter_model_name = "_".join(model_name_parts) + ".pt"
@@ -586,7 +589,7 @@ def main(
     checkpoint_callback = ModelCheckpoint(
         dirpath=output_dir,
         filename="canary_adapter_{epoch:02d}",
-        every_n_epochs=5,
+        every_n_epochs=3,
         save_top_k=10,  # Keeps only the 10 most recent/best checkpoints
         monitor="step",  # Monitors the training step to determine the "top 10"
         mode="max",

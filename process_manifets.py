@@ -3,6 +3,8 @@ import json
 import re
 import sys
 from pathlib import Path
+import click
+
 
 def process_text(text) -> str:
     """Lowercase and remove punctuation from text."""
@@ -10,9 +12,31 @@ def process_text(text) -> str:
     return re.sub(punctuation, "", text.lower())
 
 
-def process_json(input_file: str) -> None:
+def write_jsonl_file(lines: list[dict], output_path: Path):
+    """Write a list of dictionaries to a JSONL file."""
+    with open(output_path, "w", encoding="utf-8") as outfile:
+        for line in lines:
+            json_record = json.dumps(line, ensure_ascii=False)
+            outfile.write(json_record + "\n")
+
+
+@click.command()
+@click.argument("input_file", type=click.Path(exists=True))
+@click.option(
+    "--filter-long/--no-filter-long",
+    is_flag=True,
+    default=False,
+    help="Filter out audio files longer than 15 seconds",
+)
+@click.option(
+    "--max-duration",
+    type=int,
+    default=15,
+    help="Maximum duration in seconds for audio files to be included",
+)
+def process_json(input_file: str, filter_long: bool, max_duration: int) -> None:
     """Process JSON file to filter by duration and modify text/pnc fields."""
-    skiped_lines = [] 
+    skiped_lines = []
     output_file = Path(input_file).with_stem(f"{Path(input_file).stem}_processed")
 
     with (
@@ -33,7 +57,7 @@ def process_json(input_file: str) -> None:
                 record["pnc"] = "No"
 
                 # Skip records with duration > 15
-                if record["duration"] > 15:
+                if filter_long and record["duration"] > max_duration:
                     skiped_lines.append(record)
                     continue
 
@@ -44,17 +68,18 @@ def process_json(input_file: str) -> None:
             except json.JSONDecodeError as e:
                 print(f"Error processing line: {e}")
                 continue
-        
-        # Save skiped lines to a separate file
-        with open(Path(input_file).with_stem(f"{Path(input_file).stem}_skiped_lines"), "w", encoding="utf-8") as skiped_file:
-            json.dump(skiped_lines, skiped_file, ensure_ascii=False, indent=2)
 
-    print(f"Processing complete. Output saved to: {output_file}. Skiped lines={len(skiped_lines)}")
+        # Save skiped lines to a separate file
+        if filter_long and skiped_lines:
+            write_jsonl_file(
+                skiped_lines,
+                Path(input_file).with_stem(f"{Path(input_file).stem}_skiped_lines"),
+            )
+
+    print(
+        f"Processing complete. Output saved to: {output_file}. Skiped lines={len(skiped_lines)}"
+    )
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print(f"Usage: {sys.argv[0]} <input_json_file>")
-        sys.exit(1)
-
-    process_json(sys.argv[1])
+    process_json()
