@@ -643,14 +643,6 @@ def main(
     logger.info(f"Saving final adapter to {adapter_model_path}...")
     model.save_adapters(adapter_model_path)
 
-    # Train
-    logger.info("Starting training...")
-    trainer.fit(model, data_loader)
-
-    # Save adapter
-    logger.info(f"Saving adapter to {adapter_model_path}...")
-    model.save_adapters(adapter_model_path)
-
     logger.info("Training complete!")
 
 
