@@ -10,7 +10,7 @@ import soundfile as sf
 import torch
 import tqdm
 import yaml
-from datasets import load_dataset, load_dataset_builder
+from datasets import load_dataset
 from huggingface_hub import login
 from huggingface_hub import utils as hf_utils
 from lhotse import CutSet
@@ -22,20 +22,15 @@ from nemo.collections.asr.data.audio_to_text_lhotse_prompted import (
     PromptedAudioToTextMiniBatch,
 )
 from nemo.collections.asr.parts.utils.manifest_utils import (
-    read_manifest,
     write_manifest,
 )
 from nemo.collections.common.data.lhotse import get_lhotse_dataloader_from_config
-from nemo.collections.common.data.prompt_fn import (
-    get_prompt_format_fn,
-    # registered_prompt_format_fn,
-)
+from nemo.collections.common.data.prompt_fn import get_prompt_format_fn
 from nemo.collections.common.parts import LinearAdapterConfig
 from nemo.collections.common.prompts import PromptFormatter
 from omegaconf import OmegaConf
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.progress import track
 from torch.utils.data import Dataset
 
 # Set up rich logging
@@ -195,10 +190,8 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         return self._setup_dataloader(
             {
                 "manifest_filepath": self.train_manifest,
-                "num_buckets": 30,
                 "batch_size": self.batch_size,
-                # 4 workers per GPU = 8 total. Fast, but RAM safe.
-                "num_workers": 4,
+                "num_workers": 8,
                 "shuffle": True,
                 "persistent_workers": True,
                 "pin_memory": True,  # speeds up CPU-to-GPU transfer
@@ -210,7 +203,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
             {
                 "manifest_filepath": self.val_manifest,
                 "batch_size": self.batch_size,
-                "num_workers": 12,
+                "num_workers": 8,
                 "shuffle": False,
                 "persistent_workers": True,
                 "pin_memory": True,
@@ -285,7 +278,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
                         "audio_filepath": os.path.abspath(filepath),
                         "duration": duration,
                         "text": text,
-                        "pnc": "yes",
+                        "pnc": "no",
                         "source_lang": "en",  # Placeholder for Mapudungun
                         "target_lang": "es",
                     }
@@ -350,8 +343,8 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
                             "audio_filepath": audio_path,
                             "duration": duration,
                             "text": text,
-                            "pnc": "yes",
-                            "source_lang": "fr",  # Placeholder for Quechua
+                            "pnc": "no",
+                            "source_lang": "en",  # Placeholder
                             "target_lang": "es",
                         }
                     )
@@ -540,7 +533,9 @@ def main(
 
     trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total_params = sum(p.numel() for p in model.parameters())
-    logger.info(f"Trainable Parameters: {trainable_params:,} / {total_params:,} ({(trainable_params/total_params)*100:.3f}%)")
+    logger.info(
+        f"Trainable Parameters: {trainable_params:,} / {total_params:,} ({(trainable_params / total_params) * 100:.3f}%)"
+    )
 
     # HF login
     logger.info("Logging into HuggingFace Hub...")
@@ -576,7 +571,12 @@ def main(
     os.makedirs(output_dir, exist_ok=True)
 
     # Generate output model name based on parameters
-    model_name_parts = ["canary", language_mode, f"bs{batch_size}", f"epoch{max_epochs}"]
+    model_name_parts = [
+        "canary",
+        language_mode,
+        f"bs{batch_size}",
+        f"epoch{max_epochs}",
+    ]
     if max_examples:
         model_name_parts.append(f"max{max_examples}")
     adapter_model_name = "_".join(model_name_parts) + ".pt"
@@ -598,11 +598,11 @@ def main(
 
     # 1. Setup Early Stopping
     early_stop_callback = EarlyStopping(
-        monitor="val_loss",    # The metric PyTorch Lightning logs during validation
-        min_delta=0.00,        # Minimum change to qualify as an improvement
-        patience=5,            # How many validation checks to wait before stopping
+        monitor="val_loss",  # The metric PyTorch Lightning logs during validation
+        min_delta=0.00,  # Minimum change to qualify as an improvement
+        patience=5,  # How many validation checks to wait before stopping
         verbose=True,
-        mode="min"             # We want the loss to minimize
+        mode="min",  # We want the loss to minimize
     )
 
     # Setup trainer
@@ -611,7 +611,7 @@ def main(
         devices=devices,
         max_epochs=max_epochs,
         # Drastically reduces memory by using 16-bit floats for activations
-        precision="bf16-mixed", # Mixed Precision
+        precision="bf16-mixed",  # Mixed Precision
         # If we cut batch_size to 4, accumulating 4 batches gives an effective batch of 16
         accumulate_grad_batches=4,
         logger=False,
