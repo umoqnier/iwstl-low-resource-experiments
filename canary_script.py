@@ -192,7 +192,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
                 "manifest_filepath": self.train_manifest,
                 "num_buckets": 30,
                 "batch_size": self.batch_size,
-                "num_workers": 4,
+                "num_workers": 12,
                 "shuffle": True,
                 "persistent_workers": True,
                 "pin_memory": True,  # speeds up CPU-to-GPU transfer
@@ -204,7 +204,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
             {
                 "manifest_filepath": self.val_manifest,
                 "batch_size": self.batch_size,
-                "num_workers": 8,
+                "num_workers": 12,
                 "shuffle": False,
                 "persistent_workers": True,
                 "pin_memory": True,
@@ -610,6 +610,7 @@ def main(
     logger.info("Setting up trainer...")
     trainer = L.Trainer(
         devices=devices,
+        accelerator="dp",
         max_epochs=max_epochs,
         # Drastically reduces memory by using 16-bit floats for activations
         precision="bf16-mixed",  # Mixed Precision
