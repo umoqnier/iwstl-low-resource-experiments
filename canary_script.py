@@ -190,8 +190,9 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         return self._setup_dataloader(
             {
                 "manifest_filepath": self.train_manifest,
+                "num_buckets": 30,
                 "batch_size": self.batch_size,
-                "num_workers": 8,
+                "num_workers": 4,
                 "shuffle": True,
                 "persistent_workers": True,
                 "pin_memory": True,  # speeds up CPU-to-GPU transfer
