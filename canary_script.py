@@ -207,7 +207,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
                 "manifest_filepath": self.train_manifest,
                 "num_buckets": 30,
                 "batch_size": self.batch_size,
-                "num_workers": 12,
+                "num_workers": 4,
                 "shuffle": True,
                 "persistent_workers": True,
                 "pin_memory": True,  # speeds up CPU-to-GPU transfer
@@ -219,7 +219,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
             {
                 "manifest_filepath": self.val_manifest,
                 "batch_size": self.batch_size,
-                "num_workers": 12,
+                "num_workers": 4,
                 "shuffle": False,
                 "persistent_workers": True,
                 "pin_memory": True,
@@ -623,7 +623,7 @@ def main(
     # This will create a directory called 'tb_logs' in your project root
     tb_logger = TensorBoardLogger(
         save_dir="tb_logs", 
-        name="canary_mapudungun_bs{batch_size}_epochs{max_epochs}"
+        name=f"canary_mapudungun_bs{batch_size}_epochs{max_epochs}"
     )
     # 2. Setup Learning Rate Monitor (Optional but very useful)
     lr_monitor = LearningRateMonitor(logging_interval='step')
