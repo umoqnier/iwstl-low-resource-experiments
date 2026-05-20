@@ -215,3 +215,18 @@ an4
 models/
 room-impulse-responses/
 ESC-50/
+
+# LaTeX
+*.aux
+*.log
+*.out
+*.toc
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.synctex.gz
+*.snm
+*.nav
+
+*_logs/
