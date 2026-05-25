@@ -27,7 +27,7 @@
     Universidad Nacional Autónoma de México
 }
 \date{23 de Marzo 2026}
-\titlegraphic{\includegraphics[width=1cm]{imagens/logo_unam_negro.jpg}}
+\titlegraphic{\includegraphics[width=1cm]{img/logo_unam_negro.jpg}}
 
 \setbeamertemplate{navigation symbols}{}
 
@@ -70,7 +70,7 @@
     \end{column}
     \begin{column}{0.4\textwidth}
         \centering
-        \includegraphics[width=1.0\linewidth]{imagens/iwslt2026_logo.png}
+        \includegraphics[width=1.0\linewidth]{img/iwslt2026_logo.png}
     \end{column}
 \end{columns}
 \end{frame}
@@ -83,7 +83,7 @@
     \end{itemize}
     \vspace{0.5cm}
     \centering
-    \includegraphics[width=0.7\linewidth]{imagens/balanza.png}
+    \includegraphics[width=0.7\linewidth]{img/balanza.png}
 \end{frame}
 
 
@@ -224,12 +224,12 @@ Tamaño promedio de las palabras
 \begin{figure}[!tbp]
   \centering
   \begin{minipage}[b]{0.45\textwidth}
-    \includegraphics[width=\textwidth]{imagens/Graficas/mapuche/avg_word_length.jpg}
+    \includegraphics[width=\textwidth]{img/Graficas/mapuche/avg_word_length.jpg}
     \caption{Mapuche}
   \end{minipage}
   \hfill
   \begin{minipage}[b]{0.45\textwidth}
-    \includegraphics[width=\textwidth]{imagens/Graficas/quechua/avg_word_length.jpg}
+    \includegraphics[width=\textwidth]{img/Graficas/quechua/avg_word_length.jpg}
     \caption{Quechua}
   \end{minipage}
 \end{figure}
@@ -240,12 +240,12 @@ Numero de caracteres
 \begin{figure}[!tbp]
   \centering
   \begin{minipage}[b]{0.45\textwidth}
-    \includegraphics[width=\textwidth]{imagens/Graficas/mapuche/char_length.jpg}
+    \includegraphics[width=\textwidth]{img/Graficas/mapuche/char_length.jpg}
     \caption{Mapuche}
   \end{minipage}
   \hfill
   \begin{minipage}[b]{0.45\textwidth}
-    \includegraphics[width=\textwidth]{imagens/Graficas/quechua/char_length.jpg}
+    \includegraphics[width=\textwidth]{img/Graficas/quechua/char_length.jpg}
     \caption{Quechua}
   \end{minipage}
 \end{figure}
@@ -257,12 +257,12 @@ Numero de palabras por oracion
 \begin{figure}[!tbp]
   \centering
   \begin{minipage}[b]{0.45\textwidth}
-    \includegraphics[width=\textwidth]{imagens/Graficas/mapuche/word_length.jpg}
+    \includegraphics[width=\textwidth]{img/Graficas/mapuche/word_length.jpg}
     \caption{Mapuche}
   \end{minipage}
   \hfill
   \begin{minipage}[b]{0.45\textwidth}
-    \includegraphics[width=\textwidth]{imagens/Graficas/quechua/word_length.jpg}
+    \includegraphics[width=\textwidth]{img/Graficas/quechua/word_length.jpg}
     \caption{Quechua}
   \end{minipage}
 \end{figure}
@@ -277,13 +277,13 @@ Numero de palabras por oracion
 Canary 1B v2 \cite{koluguri2025granaryspeechrecognitiontranslation}. Un modelo de \textit{1 Billon} de parámetros entrenado con al rededor de 1.7 millones de horas de 25 idiomas. En este trabajo también se entreno con lenguas de bajos recursos como Lituano.
 
 \begin{figure}
-  \includegraphics[width=0.5\linewidth]{imagens/nvidia-logo-horz.png}
+  \includegraphics[width=0.5\linewidth]{img/nvidia-logo-horz.png}
 \end{figure}
 \end{frame}
 \begin{frame}{Modelos preentrenados II: SeamlessM4T}
 Meta también tiene modelos como SeamlessM4T \cite{seamless2023} con versiones de 1.2 y 2.3 \textit{Billion} parámetros entrenado con 4.5 millones de horas. De igual forma integraron idiomas de bajos recursos en el entrenamiento, como el Uzbeko.
 \begin{figure}
-  \includegraphics[width=0.3\linewidth]{imagens/meta_PNG12-1353596828.png}
+  \includegraphics[width=0.3\linewidth]{img/meta_PNG12-1353596828.png}
 \end{figure}
 En ambos casos los pesos de los modelos están disponibles para uso libre.
 
@@ -292,7 +292,7 @@ En ambos casos los pesos de los modelos están disponibles para uso libre.
 \begin{frame}{Fine-tuning Eficiente (Adapters)}
 Dado que tenemos muy pocos datos, un \textit{Full Fine-Tuning} causaría \textbf{overfitting} y es computacionalmente costoso. 
 \begin{figure}
-  \includegraphics[width=\linewidth]{imagens/overfitting.png}
+  \includegraphics[width=\linewidth]{img/overfitting.png}
 \end{figure}
 
 Nuestra propuesta: \pause \textbf{Parameter-Efficient Fine-Tuning (PEFT)}
@@ -310,7 +310,7 @@ Nuestra propuesta: \pause \textbf{Parameter-Efficient Fine-Tuning (PEFT)}
 \begin{frame}{Houlsby Adapter \cite{DBLP:journals/corr/abs-1902-00751}}
     En la implementacion llamado \textit{Linear adapter} 
 \begin{figure}
-    \includegraphics[width=0.3\linewidth]{imagens/Adapter.png}
+    \includegraphics[width=0.3\linewidth]{img/Adapter.png}
 \end{figure}
 Caracteristicas: Modulo Linear Feedforward, LayerNorm, Una sola capa oculta con funcion de activacion.
 
@@ -336,7 +336,7 @@ Caracteristicas: Modulo Linear Feedforward, LayerNorm, Una sola capa oculta con 
 
  \begin{figure}
      \centering
-     \includegraphics[width=0.8\linewidth]{imagens/registry.png}
+     \includegraphics[width=0.8\linewidth]{img/registry.png}
  \end{figure}
 
 \end{frame}
@@ -344,18 +344,18 @@ Caracteristicas: Modulo Linear Feedforward, LayerNorm, Una sola capa oculta con 
 \section{Resultados}
 \begin{frame}{Primera version}
      \centering
-     \includegraphics[width=0.9\linewidth]{imagens/Resultados/3/training_batch_wer_vs_val_wer.png}
+     \includegraphics[width=0.9\linewidth]{img/Resultados/3/training_batch_wer_vs_val_wer.png}
 \end{frame}
 
 
 \begin{frame}{Segunda version I}
      \centering
-     \includegraphics[width=0.9\linewidth]{imagens/Resultados/12/training_batch_wer_vs_val_wer.png}
+     \includegraphics[width=0.9\linewidth]{img/Resultados/12/training_batch_wer_vs_val_wer.png}
 \end{frame}
 
 \begin{frame}{Segunda version II}
      \centering
-     \includegraphics[width=0.9\linewidth]{imagens/Resultados/100/training_batch_wer_vs_val_wer.png}
+     \includegraphics[width=0.9\linewidth]{img/Resultados/100/training_batch_wer_vs_val_wer.png}
 \end{frame}
 
 

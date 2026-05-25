@@ -26,7 +26,7 @@
 \subtitle{Una arquitectura de \textit{fine-tuning} eficiente para el Mapudungún}
 \author[Barriga]{
     Diego Barriga, Edgar Gazque \\
-    \texttt{dbarriga@ciencias.unam.mx}, \texttt{amilkar.edgar@gmail.com} \\
+    \texttt{dbarriga@ciencias.unam.mx}, \texttt{amilkar@ciencias.unam.mx} \\
 }
 \institute[UNAM]{
     Procesamiento del Lenguaje Natural \\
@@ -120,9 +120,8 @@
 \begin{frame}
     \begin{figure}
         \centering
-        TODO: Mejorar esta imagen
-        \includegraphics[width=\textwidth]{img/ast.png}
-        \caption{Ejemplo de sistema de traducción automática del habla. Tomada de \url{https://research.google/blog/real-time-speech-to-speech-translation/}}
+        \includegraphics[width=\textwidth]{img/ast_diagram.png}
+        \caption{Ejemplo de sistema de traducción automática del habla. Ingresa audio en una lengua y sale texto en otra lengua.}
     \end{figure}
 \end{frame}
 
@@ -131,7 +130,7 @@
         \item <1-> En los últimos años, se ha optado por utiliza un enfoque \textit{encoder-decoder} basado en redes neuronales profundas, con modelos como Transformers \cite{vaswani2017attention}.
         \item <2-> En particular, se aprovechan modelos masivos pre-entrenados de forma \textit{\textbf{end-to-end}} para tareas de traducción automática y reconocimiento del habla.
         \item <3-> Estos modelos aprenden a mapear de un audio a su representación textual.
-        \item <4-> Para adaptar estos modelos a tareas específicas, se utiliza el ajuste fino (\textit{fine-tuning}), donde se entrena el modelo con un conjunto de datos específico para la tarea.
+        \item <4-> Para adaptar estos modelos a tareas específicas, se utiliza el \textbf{ajuste fino} (\textit{fine-tuning}), donde se entrena el modelo con un conjunto de datos específico para la tarea.
     \end{itemize}
 \end{frame}
 
@@ -177,9 +176,9 @@
     \begin{itemize}
         \item <1-> América Latina es una región con una gran diversidad lingüística, albergando cientos de lenguas originarias.
         \item <2-> Limitandonos a México, existen 68 lenguas originarias reconocidas oficialmente, con más de 360 variantes dialectales.
-        \item <3-> Todas las lenguas originarias de México son de bajos recursos digitales. Una realidad para muchas lenguas originarias en América Latina.
+        \item <3-> Todas las lenguas originarias de México son de \alert{bajos recursos digitales}. Una realidad para muchas lenguas originarias en América Latina.
         \item <4-> Hay muy poca tecnología del lenguaje desarrollada para estas lenguas.
-        \item <5-> La mayoría de las lenguas originarias no tienen sistema de escritura estandarizado. Son lenguas principalmente orales.
+        \item <5-> La mayoría de las lenguas originarias no tienen sistema de escritura estandarizado. Son \alert{lenguas principalmente orales}.
     \end{itemize}
 
 \end{frame}
@@ -188,7 +187,6 @@
 
     \begin{figure}
         \centering
-        TODO: Mejorar esta imágen
         \includegraphics[width=\textwidth]{img/mex_map.png}
         \caption{Lenguas originarias de México. Tomada de la \href{https://github.com/umoqnier/cl-2026-2-lab/blob/main/practicas/romanbott/P2/Practica2.ipynb}{práctica 2} del Lingüística Computacional del alumno \texttt{@romanbott}}
     \end{figure}
@@ -274,21 +272,42 @@
     % TODO: Imagen de fine-tuning
 \end{frame}
 
-\begin{frame}{Ajuste fino eficiente}
-   En el contexto de los bajos recursos, un \textit{Full Fine\-Tuning} causaría \textbf{overfitting} y es computacionalmente costoso. Nuestra Solución: \pause
+\begin{frame}{Fine-tuning Eficiente (Adapters)}
+   En el contexto de los bajos recursos, un \textit{Full Fine\-Tuning} causaría \textbf{overfitting} y es computacionalmente costoso.
 
-    \huge \textbf{Parameter-Efficient Fine-Tuning (PEFT)} \cite{xu2023parameterefficientfinetuningmethodspretrained} 
+    \begin{figure}
+        \includegraphics[width=\linewidth]{img/overfitting.png}
+    \end{figure}
+
+    Nuestra propuesta: \pause \textbf{Parameter-Efficient Fine-Tuning (PEFT) \cite{xu2023parameterefficientfinetuningmethodspretrained}}
+\end{frame}
+
+\begin{frame}{Houlsby Adapter \cite{DBLP:journals/corr/abs-1902-00751}}
+    En la implementacion llamado \textit{Linear adapter} 
+    \begin{figure}
+        \includegraphics[width=0.3\linewidth]{img/Adapter.png}
+    \end{figure}
+    Caracteristicas: Modulo Linear Feedforward, LayerNorm, Una sola capa oculta con funcion de activacion.
+\end{frame}
+
+\begin{frame}{Caracteristicas del adapter \cite{DBLP:journals/corr/abs-2110-04366}}
+    \begin{itemize}
+        \item \textbf{Funcional:} Los parametros entrenables que modificaran el \textit{input}
+        \item \textbf{Inserción:} Las salidas del adaptador se integran con la entrada original.
+        \item \textbf{Composición:} Cómo se integran las salidas de los adaptadores con las entradas. Ejemplo  una conexión de suma residual o multiplicacion elemento a elemento.
+    \end{itemize}   
 \end{frame}
 
 \begin{frame}{PEFT}
 
 % TODO abundar en la estraegía Adapters
 
-\begin{itemize}
-    \item <1-> Se congelan la mayoría de los pesos de un modelo preentrenado (ej. \texttt{canary-1b-v2}).
-    \item <2-> Se habilitan pequeñas capas entrenables.
-    \item <3-> \textbf{Estrategia específica:} Utilizamos la estrategia específica de \textbf{Adapters} \cite{houlsby2019parameterefficienttransferlearningnlp} para ajustar el \textit{Encoder} que capturar la acústica de las nuevas lenguas.
-\end{itemize}
+    \begin{itemize}
+        \item <1-> Se congelan la mayoría de los pesos de un modelo preentrenado (ej. \texttt{canary-1b-v2}).
+        \item <2-> Se habilitan pequeñas capas entrenables.
+        \item <3-> \textbf{Estrategia específica:} Entrenaremos adapters en el \textit{Encoder} para capturar la acústica de las nuevas lenguas.
+        \item <4-> Con esta configuracion entrenamos \texttt{589,824} parametros de un total de \texttt{962,745,344}, es decir menor al 0.1 \% 
+    \end{itemize}
 
 \end{frame}
 
@@ -420,9 +439,9 @@
     \end{itemize}
 \end{frame}
 
-\begin{frame}{Curvas}
+\begin{frame}{Primera versión}
 
-    TODO: Mostrar curvas de entrenamiento
+    
 
 \end{frame}
 
@@ -499,6 +518,6 @@
 \normalsize
 \textbf{Contacto:} \\
 Diego Barriga - \url{dbarriga@ciencias.unam.mx} \\
-Edgar Gazque - \url{amilkar.edgar@gmail.com}
+Edgar Gazque - \url{amilkar@ciencias.unam.mx}
 \end{frame}
 \end{document}
