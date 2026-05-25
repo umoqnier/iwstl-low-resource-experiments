@@ -163,12 +163,6 @@
     
 \end{frame}
 
-%\begin{frame}{Speech Translation}
-
-%A diferencia de los sistemas de detección automática del habla y traducción habituales, dónde primero se realiza la detección de lo que las personas dicen, se realiza una transcripción en la lengua nativa y después de pasa la transcripción a un modelo de traducción automática, los sistemas de \textit{Speech Translation} realizan el mapeo de voz en lengua nativa a traducción textual en la lengua \textit{target} como un sistema \textit{end-to-end}.
-
-%3\end{frame}
-
 \section{Problemática}
 
 \begin{frame}{Diversidad lingüística en América Latina}
@@ -210,17 +204,6 @@
 \end{enumerate}
 
 \end{frame}
-
-\begin{comment}
-\begin{frame}{Reto científico}
-
-\begin{itemize}
-    \item <1-> Si bien se han mostrado fuertes progresos en el área utilizando \textit{datasets} con recursos abundantes, muchas lenguas del mundo carecen de la cantidad de datos paralelos necesarios para modelos de aprendizaje profundo estándar.
-    \item <2-> La comunidad requiere pensar en \textbf{enfoques creativos} para aprovechar los pocos recursos disponibles y, asi, lograr sistemas competitivos y útiles.
-\end{itemize}
-
-\end{frame}    
-\end{comment}
 
 \section{Especificaciones del reto}
 
@@ -268,11 +251,19 @@
         \item <1-> El ajuste fino es una técnica de transferencia de aprendizaje donde un modelo pre-entrenado se adapta a una tarea específica con un conjunto de datos más pequeño.
         \item <2-> Los modelos masivos pre-entrenados ya han aprendido representaciones lingüísticas generales, el ajuste fino es una estrategia para adaptar estos modelos a tareas específicas con pocos datos.
     \end{itemize}
-    
-    % TODO: Imagen de fine-tuning
 \end{frame}
 
-\begin{frame}{Fine-tuning Eficiente (Adapters)}
+\begin{frame}
+
+    \begin{figure}
+        \centering
+        \includegraphics[width=\linewidth]{img/fine_tuning.png}
+        \caption{Transferencia de conocimiento de un modelo pre-entrenado a otra tarea. Tomada de clase 7 del curso Analítica de Textos y Modelos de Lenguaje derivada de \url{https://somosnlp.org/nlp-de-cero-a-cien/sesion-04}.}
+    \end{figure}
+
+\end{frame}
+
+\begin{frame}{Fine-tuning Eficiente (PEFT)}
    En el contexto de los bajos recursos, un \textit{Full Fine\-Tuning} causaría \textbf{overfitting} y es computacionalmente costoso.
 
     \begin{figure}
@@ -298,9 +289,7 @@
     \end{itemize}   
 \end{frame}
 
-\begin{frame}{PEFT}
-
-% TODO abundar en la estraegía Adapters
+\begin{frame}{Adapters para ST de lenguas originarias}
 
     \begin{itemize}
         \item <1-> Se congelan la mayoría de los pesos de un modelo preentrenado (ej. \texttt{canary-1b-v2}).
@@ -319,20 +308,6 @@
     \includegraphics[width=0.5\linewidth]{img/nvidia-logo-horz.png}
     \end{figure}
 \end{frame}
-
-\begin{comment}
-    
-\begin{frame}{Modelos pre-entrenados II: SeamlessM4T}
-    Meta también tiene modelos como SeamlessM4T \cite{seamless2023} con versiones de 1.2 y 2.3 \textit{Billion} parámetros entrenado con 4.5 millones de horas. De igual forma integraron idiomas de bajos recursos en el entrenamiento, como el Uzbeko.
-    \begin{figure}
-    \includegraphics[width=0.3\linewidth]{img/meta_PNG12-1353596828.png}
-    \end{figure}
-    
-    En ambos casos los pesos de los modelos están disponibles para uso libre.
-
-\end{frame}
-\end{comment}
-
 
 \begin{frame}{Canary como modelo base}
 
@@ -408,6 +383,26 @@
     \end{columns}
 \end{frame}
 
+\begin{frame}{Aumentación de datos}
+
+    \begin{block}{Pipeline dinámico}
+        \begin{itemize}
+            \item Implementación de un flujo de aumentación de datos de forma \textit{on-the-fly} basado en \cite{audiomentations}.
+            \item Aplicado directamente durante el entrenamiento.
+            \item Eliminamos la necesidad de almacenar datos pre-procesados adicionales.
+        \end{itemize}
+    \end{block}
+    
+    \begin{block}{Tecnicas estocásticas}
+        \begin{itemize}
+            \item Inyección de ruido de fondo y ruido gaussiano.
+            \item Aplicación de \textit{aliasing} y respuestas al impulso de sala (\textit{room impulse responses}).
+            \item Filtrado de paso de banda (\textit{band-pass filtering}).
+            \item Desplazamiento de tono (\textit{pitch shifting}).
+        \end{itemize}
+    \end{block}
+\end{frame}
+
 \begin{frame}
     TODO: Reproducir un audio y
     \begin{exampleblock}{Ejemplos}
@@ -422,12 +417,6 @@
      
 \end{frame}
 
-\begin{frame}{Aumentación de datos}
-
-    TODO: Hablar de la estrategia de aumentación de datos que implementamos, y mostrar ejemplos de los audios aumentados. 
-
-\end{frame}
-
 \section{Resultados}
 
 \begin{frame}{Resultados}
@@ -437,6 +426,21 @@
         \item <3-> Un análisis cualitativo muestra que el modelo si alcanza a capturar fenomenos del habla del Mapudungún. Ver ejemplo \ref{example:good}.
         \item <4-> Sin embargo, el modelo tiende a caer en la repetición de estructuras básicas del español. Ver ejemplo \ref{example:bad}.
     \end{itemize}
+\end{frame}
+
+\begin{frame}{Métricas}
+    \begin{table}
+        \begin{center}
+            \begin{tabular}{|l|c|c|}\hline
+            Run & WER on dev & BLUE on dev\\\hline
+            Main &  $2.5$       & $1.015$ \\
+            Vanilla & $2.3$     & $1.05$  \\
+            Filtered & \textbf{$1.56$}  & \textbf{$3.7$}\\\hline
+            \end{tabular}
+            \caption{\textbf{Main:} Corrita principal, incluye el modulo de aumentación de datos. \textbf{Vanilla:} No incluye aumentación de datos. \textbf{Filtered:} Corrita sin el modulo de aumentación de datos y con los audios de menos de 15 segundos. El resto de audios fue usado para pruebas.}
+            \label{tbl:results}
+        \end{center}
+    \end{table}
 \end{frame}
 
 \begin{frame}{Primera version}
@@ -457,29 +461,10 @@
 
 \begin{frame}{Segunda version II}
     \begin{figure}
-     \centering
-     \includegraphics[width=0.9\linewidth]{img/Resultados/100/training_batch_wer_vs_val_wer.png}
+        \centering
+        \includegraphics[width=0.9\linewidth]{img/Resultados/100/training_batch_wer_vs_val_wer.png}
         \caption{Tercera corrida experimental.}   
     \end{figure}
-     
-\end{frame}
-
-
-
-\begin{frame}{Métricas}
-    \begin{table}
-        \begin{center}
-            \begin{tabular}{|l|c|c|}\hline
-            Run & WER on dev & BLUE on dev\\\hline
-            Main &  $2.5$       & $1.015$ \\
-            Vanilla & $2.3$     & $1.05$  \\
-            Filtered\footnote{Filtramos los audios de más de 15 segundos. Entrenamos con el resto} & \textbf{$1.56$}  & \textbf{$3.7$}\\\hline
-            \end{tabular}
-            % TODO: En el caption poner que es MAIN, Vanilla y Filtered
-            \caption{Estas métricas reportadas para nuestros experimentos.}
-            \label{tbl:results}
-        \end{center}
-    \end{table}
 \end{frame}
 
 \begin{frame}{Ejemplos}
@@ -506,7 +491,7 @@
     \end{figure}
 \end{frame}
 
-\section{Conclucisones y trabajo futuro}
+\section{Concluciones y trabajo futuro}
 
 \begin{frame}{Conclusión}
     \begin{itemize}
