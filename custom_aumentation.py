@@ -1,7 +1,5 @@
 from audiomentations import Compose, AddGaussianNoise, PitchShift, Aliasing,ApplyImpulseResponse, BandPassFilter,AddBackgroundNoise,PolarityInversion
 
-import numpy as np
-
 T1 = AddBackgroundNoise(
     sounds_path="ESC-50/audio",
     min_snr_db=3.0,
