@@ -213,8 +213,8 @@ combined_data
 *.pt
 an4
 models/
-room-impulse-responses/
-ESC-50/
+room-impulse-responses/*
+ESC-50/*
 
 # LaTeX
 *.aux
@@ -230,3 +230,4 @@ ESC-50/
 *.nav
 
 *_logs/
+*data*
