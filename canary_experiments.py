@@ -31,7 +31,6 @@ print(f"Number of GPUs detected: {gpu_count}")
 for i in range(gpu_count):
     print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
 
-breakpoint()
 # %% [markdown]
 # ## Modelo
 
@@ -518,7 +517,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
 
 
 # %%
-data_loader = CanaryMultilingualDataModule(tokenizer=model.tokenizer, prompt_formatter=model.prompt, streaming=False, batch_size=4, language_mode="multi")
+data_loader = CanaryMultilingualDataModule(tokenizer=model.tokenizer, prompt_formatter=model.prompt, streaming=False, batch_size=16, language_mode="multi")
 
 # %%
 data_loader.prepare_data()
