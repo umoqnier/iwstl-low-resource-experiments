@@ -10,6 +10,19 @@ The [NVIDIA canary-1B-v2](https://huggingface.co/nvidia/canary-1b-v2) model is u
 
 ## Scripts
 
+```mermaid
+graph TD
+    root[project_root] --> train_py[train.py]
+    root --> utils_dir[utils/]
+    root --> data_dir[data/]
+    
+    utils_dir --> logging_utils_py[logging_utils.py]
+    
+    data_dir --> processors_py[processors.py]
+    data_dir --> dataset_py[dataset.py]
+    data_dir --> datamodule_py[datamodule.py]
+```
+
 ### 1. Data Processing
 
 - `process_manifets.py`: Cleans JSON manifest files (converts to lowercase, removes punctuation) and allows filtering audio files that exceed a maximum duration (15 seconds by default).
