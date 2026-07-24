@@ -4,6 +4,7 @@ import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any, Optional
+from utils.configs import NAHUATL_MANIFESTS_PATH, NAHUATL_SPLITS, NAHUATL_AUDIOS_PATH
 
 import soundfile as sf
 import tqdm
@@ -137,11 +138,52 @@ class NahuatlProcessor(LanguageProcessor):
     ):
         super().__init__(name, out_dir, max_examples)
         self.data_dir = Path(data_dir)
+        self.manifests_dir = NAHUATL_MANIFESTS_PATH
+        self.nahuatl_splits = NAHUATL_SPLITS
+        self.nahuatl_audios = NAHUATL_AUDIOS_PATH
+        self.chunks_dir = self.data_dir / Path("audio_chunks")
+
+    def cut_audio_chunk(self, audio_path: Path, segment: dict) -> Path:
+        self.chunks_dir.mkdir(parents=True, exist_ok=True)
+        segment_id = segment["start_ts"] + "_" + segment["end_ts"]
+        chunk_filename = f"{audio_path.stem}_{segment_id}.wav"
+        chunk_path = self.chunks_dir / chunk_filename
+        if chunk_path.exists():
+            logger.warning(f"chunk path {chunk_path} already exists. Skipping")
+            return chunk_path
+
+        start_chunk = segment["start"]
+        end_chunk = segment["end"]
+
+        # Cut audio and save as chunk
+        audio_info = sf.info(audio_path)
+        samplerate = audio_info.samplerate
+        start_sample = int(start_chunk * samplerate)
+        end_sample = int(end_chunk * samplerate)
+        num_frames = end_sample - start_sample
+
+        if num_frames <= 0:
+            logger.warning(f"Invalid chunk duration for {segment_id}: {num_frames} frames")
+            return None
+
+        # Read only the specific chunk from the file
+        chunk_data = sf.read(audio_path, start=start_sample, frames=num_frames)[0]
+
+        # Convert to mono if stereo/multi-channel by averaging channels
+        if len(chunk_data.shape) > 1:
+            chunk_data = chunk_data.mean(axis=1)
+
+        logger.info(f"Saving chunk {segment_id} for {audio_path.stem}")
+        sf.write(chunk_path, chunk_data, samplerate)
+        return chunk_path
 
     def process(self, split: str, streaming: bool) -> list[dict[str, Any]]:
         logger.info(f"Processing {self.name} split: {split} from EAF files...")
         entries = []
-        eaf_files = list(self.data_dir.glob("*.eaf"))
+        eaf_files = []
+        manifests_sub_dirs = [self.manifests_dir / Path(dir) for dir in self.nahuatl_splits[split]]
+        for dir in manifests_sub_dirs:
+            eaf_files.extend(list(dir.glob("*.eaf")))
 
         for eaf_path in tqdm.tqdm(eaf_files, desc=f"{self.name} {split}"):
             if self.max_examples and len(entries) >= self.max_examples:
@@ -153,20 +195,21 @@ class NahuatlProcessor(LanguageProcessor):
                 for seg in segments:
                     if self.max_examples and len(entries) >= self.max_examples:
                         break
-
-                    audio_path = self.data_dir / parser.AUDIOS_PATH / seg["audio_file"]
+                    audio_path = self.nahuatl_audios / seg["audio_file"]
                     if not audio_path.exists():
-                        continue
+                        logger.warning(f"NAHUATL AUDIO PATH {audio_path} NOT FOUND")
+                        break
 
+                    chunk_path = self.cut_audio_chunk(audio_path, seg)
                     entries.append(
                         {
-                            "audio_filepath": str(audio_path.absolute()),
+                            "audio_filepath": str(chunk_path.absolute()),
                             "duration": seg["duration"],
                             "text": seg["transcription"],
                             "translation": seg["translation"],
                             "pnc": "no",
-                            "source_lang": "es",
-                            "target_lang": self.name,
+                            "source_lang": "en",
+                            "target_lang": "es",
                         }
                     )
             except Exception as e:
@@ -176,8 +219,6 @@ class NahuatlProcessor(LanguageProcessor):
 
 
 class EAFParser:
-    AUDIOS_PATH = "Sound-files-Puebla-Nahuatl"
-
     def __init__(self, eaf_path):
         self.eaf_path = Path(eaf_path)
         self.tree = ET.parse(eaf_path)
@@ -228,6 +269,8 @@ class EAFParser:
                     transcriptions[ann_id] = {
                         "start": start_time,
                         "end": end_time,
+                        "start_ts": start_ts,
+                        "end_ts": end_ts,
                         "text": text_val,
                         "translation": None,
                     }
@@ -249,6 +292,8 @@ class EAFParser:
                 "audio_file": self.media_file,
                 "start": seg["start"],
                 "end": seg["end"],
+                "start_ts": seg["start_ts"],
+                "end_ts": seg["end_ts"],
                 "duration": seg["end"] - seg["start"],
                 "transcription": seg["text"],
                 "translation": seg["translation"],

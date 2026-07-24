@@ -86,3 +86,13 @@ python canary_transcript.py --manifest path/test_manifest.json --adapter-path mo
 
 ---
 **Base Model:** `nvidia/canary-1b-v2` (NVIDIA NeMo)
+
+## Related notebook tutorial
+
+- [Multi task Adapters tutorial](https://github.com/NVIDIA-NeMo/Speech/blob/main/tutorials/asr/asr_adapters/Multi_Task_Adapters.ipynb)
+
+### Nemo intallation
+
+```sh
+!python -m pip install "nemo_toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git@main"
+```

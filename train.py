@@ -14,7 +14,7 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from nemo.collections.common.parts import LinearAdapterConfig
 
 from data.datamodule import CanaryMultilingualDataModule
-from data.processors import MapugungunProcessor, QuechuaProcessor
+from data.processors import MapugungunProcessor, NahuatlProcessor, QuechuaProcessor
 from utils.configs import (
     CANARY_FLASH_MODEL_ID,
     CANARY_MODEL_ID,
@@ -33,7 +33,7 @@ logger = setup_logging()
 @click.option(
     "--language-mode",
     type=click.Choice(["map", "que", "azz", "multi"]),
-    default="multi",
+    default="azz",
 )
 @click.option(
     "--model-base", type=click.Choice([CANARY_FLASH_MODEL_ID, CANARY_MODEL_ID])
@@ -62,21 +62,8 @@ def main(
     map_dataset_id,
     azz_dataset_dir,
 ):
-    if model_base is None:
-        model_base = (
-            CANARY_MODEL_ID if torch.cuda.is_available() else CANARY_FLASH_MODEL_ID
-        )
-
-    model = nemo_asr.models.ASRModel.from_pretrained(model_base)
-    model.replace_adapter_compatible_modules()
-    model.add_adapter(
-        name="encoder:enc",
-        cfg=LinearAdapterConfig(in_features=model.cfg.encoder.d_model, dim=8),
-    )
-    model.freeze()
-    model.unfreeze_enabled_adapters()
-
     hf_login()
+    max_examples = 10
 
     processors = []
     if language_mode in ["map", "multi"]:
@@ -103,10 +90,24 @@ def main(
         )
     if language_mode in ["azz", "multi"]:
         processors.append(
-            MapugungunProcessor(
-                "azz", manifests_dir, azz_dataset_dir, "text", max_examples
+            NahuatlProcessor(
+                "azz", manifests_dir, azz_dataset_dir, max_examples
             )
         )
+
+    if model_base is None:
+        model_base = (
+            CANARY_MODEL_ID if torch.cuda.is_available() else CANARY_FLASH_MODEL_ID
+        )
+
+    model = nemo_asr.models.ASRModel.from_pretrained(model_base)
+    model.replace_adapter_compatible_modules()
+    model.add_adapter(
+        name="encoder:enc",
+        cfg=LinearAdapterConfig(in_features=model.cfg.encoder.d_model, dim=8),
+    )
+    model.freeze()
+    model.unfreeze_enabled_adapters()
 
     data_loader = CanaryMultilingualDataModule(
         tokenizer=model.tokenizer,
@@ -124,7 +125,7 @@ def main(
 
     trainer = L.Trainer(
         devices=devices,
-        accelerator="gpu",
+        accelerator="gpu" if torch.cuda.is_available() else "cpu",
         strategy="ddp",
         max_epochs=max_epochs,
         precision="bf16-mixed",

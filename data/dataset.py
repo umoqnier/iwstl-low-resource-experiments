@@ -1,4 +1,4 @@
-from typing import Protocol, list, tuple
+from typing import Protocol
 
 import numpy as np
 import torch
@@ -33,9 +33,9 @@ class MyCanaryPromptedAudioToTextLhotseDataset(Dataset):
 
     def __getitem__(self, cuts: CutSet) -> PromptedAudioToTextMiniBatch:
         audio, audio_lens, cuts = self.load_audio(cuts)
-        audio_np = audio.numpy()
-        augmented = [augment(samples=sample, sample_rate=16000) for sample in audio_np]
-        audio = torch.from_numpy(np.stack(augmented))
+        #audio_np = audio.numpy()
+        #augmented = [augment(samples=sample, sample_rate=16000) for sample in audio_np]
+        #audio = torch.from_numpy(np.stack(augmented))
 
         answers, prompts, prompts_with_answers = [], [], []
         for cut in cuts:

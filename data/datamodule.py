@@ -91,6 +91,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         if os.path.exists(self.manifests["train"]) and os.path.exists(
             self.manifests["validation"]
         ):
+            logger.warning("Manifests already exists. Skipping creation")
             return
 
         for split in ["train", "validation"]:
