@@ -2,13 +2,13 @@
 
 This repository contains the experiments developed for participation in the [IWSLT 2026 shared task](https://iwslt.org/2026/low-resource), specifically in the low resource track. The main objective is to implement automatic speech translation (AST) systems for **Mapudungun (arn)** $\rightarrow$ **Spanish (spa)**.
 
-The [NVIDIA canary-1B-v2](https://huggingface.co/nvidia/canary-1b-v2) model is used as a base, applying PEFT techniques through adapters to optimize performance for these languages with limited available data.
+The [NVIDIA canary-1B-v2](https://huggingface.co/nvidia/canary-1b-v2) model is used as a base, applying PEFT techniques through adapters to optimize performance for these languages with limited available data. For CPU prototyping we can use `canary-1b-flash`.
 
 ## Architecture
 
 ![Architecture](latex/img/canary_linear_adapter.jpg)
 
-## Scripts
+## Folder structure 
 
 ```mermaid
 graph TD

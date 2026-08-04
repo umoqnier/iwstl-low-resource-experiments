@@ -213,7 +213,7 @@ combined_data
 *.pt
 an4
 models/
-room-impulse-responses/*
+room-impulse-responses/
 ESC-50/*
 
 # LaTeX
