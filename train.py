@@ -90,9 +90,7 @@ def main(
         )
     if language_mode in ["azz", "multi"]:
         processors.append(
-            NahuatlProcessor(
-                "azz", manifests_dir, azz_dataset_dir, max_examples
-            )
+            NahuatlProcessor("azz", manifests_dir, azz_dataset_dir, max_examples)
         )
 
     if model_base is None:
@@ -130,7 +128,9 @@ def main(
         max_epochs=max_epochs,
         precision="bf16-mixed",
         accumulate_grad_batches=4,
-        logger=TensorBoardLogger(save_dir="tb_logs", name=f"canary_{language_mode}"),
+        logger=TensorBoardLogger(
+            save_dir="logs/tb_logs", name=f"canary_{language_mode}"
+        ),
         callbacks=[
             ModelCheckpoint(
                 dirpath=models_dir,

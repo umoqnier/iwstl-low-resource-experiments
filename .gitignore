@@ -209,12 +209,12 @@ __marimo__/
 
 combined_data/
 datasets/
-combined_data
 *.pt
 an4
 models/
+manifests/
 room-impulse-responses/
-ESC-50/*
+ESC-50/
 
 # LaTeX
 *.aux
