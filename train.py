@@ -63,8 +63,6 @@ def main(
     azz_dataset_dir,
 ):
     hf_login()
-    max_examples = 10
-
     processors = []
     if language_mode in ["map", "multi"]:
         processors.append(
