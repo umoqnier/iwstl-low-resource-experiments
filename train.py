@@ -126,7 +126,7 @@ def main(
     trainer = L.Trainer(
         devices=devices,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        strategy="ddp",
+        strategy="ddp" if torch.cuda.device_count() > 1 else "auto",
         max_epochs=max_epochs,
         precision="bf16-mixed",
         accumulate_grad_batches=4,

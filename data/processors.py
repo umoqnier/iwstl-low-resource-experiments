@@ -1,22 +1,34 @@
 import logging
 import os
+import re
+import string
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Optional
-from utils.configs import NAHUATL_MANIFESTS_PATH, NAHUATL_SPLITS, NAHUATL_AUDIOS_PATH
+from typing import Any
 
 import soundfile as sf
 import tqdm
 import yaml
 
 from datasets import load_dataset
+from utils.configs import NAHUATL_AUDIOS_PATH, NAHUATL_MANIFESTS_PATH, NAHUATL_SPLITS
 
 logger = logging.getLogger(__name__)
 
 
+def normalize_text(text: str) -> str:
+    """Normalize text
+
+    Make it lowercase, remove punctuation, replace whitespace with a single whitespace
+    """
+    text = text.lower()
+    text = text.translate(str.maketrans("", "", string.punctuation + "¿¡"))
+    return re.sub(r"\s+", " ", text).strip()
+
+
 class LanguageProcessor(ABC):
-    def __init__(self, name: str, out_dir: str, max_examples: Optional[int] = None):
+    def __init__(self, name: str, out_dir: str, max_examples: int | None = None):
         self.name = name
         self.out_dir = out_dir
         self.max_examples = max_examples
@@ -33,7 +45,7 @@ class MapugungunProcessor(LanguageProcessor):
         out_dir: str,
         dataset_id: str,
         text_column: str,
-        max_examples: Optional[int] = None,
+        max_examples: int | None = None,
     ):
         super().__init__(name, out_dir, max_examples)
         self.dataset_id = dataset_id
@@ -90,7 +102,7 @@ class QuechuaProcessor(LanguageProcessor):
         out_dir: str,
         data_dir: str,
         split_mapping: dict[str, list[str]],
-        max_examples: Optional[int] = None,
+        max_examples: int | None = None,
     ):
         super().__init__(name, out_dir, max_examples)
         self.data_dir = data_dir
@@ -134,7 +146,7 @@ class QuechuaProcessor(LanguageProcessor):
 
 class NahuatlProcessor(LanguageProcessor):
     def __init__(
-        self, name: str, out_dir: str, data_dir: str, max_examples: Optional[int] = None
+        self, name: str, out_dir: str, data_dir: str, max_examples: int | None = None
     ):
         super().__init__(name, out_dir, max_examples)
         self.data_dir = Path(data_dir)
@@ -163,7 +175,9 @@ class NahuatlProcessor(LanguageProcessor):
         num_frames = end_sample - start_sample
 
         if num_frames <= 0:
-            logger.warning(f"Invalid chunk duration for {segment_id}: {num_frames} frames")
+            logger.warning(
+                f"Invalid chunk duration for {segment_id}: {num_frames} frames"
+            )
             return None
 
         # Read only the specific chunk from the file
@@ -181,7 +195,9 @@ class NahuatlProcessor(LanguageProcessor):
         logger.info(f"Processing {self.name} split: {split} from EAF files...")
         entries = []
         eaf_files = []
-        manifests_sub_dirs = [self.manifests_dir / Path(dir) for dir in self.nahuatl_splits[split]]
+        manifests_sub_dirs = [
+            self.manifests_dir / Path(dir) for dir in self.nahuatl_splits[split]
+        ]
         for dir in manifests_sub_dirs:
             eaf_files.extend(list(dir.glob("*.eaf")))
 
@@ -205,9 +221,9 @@ class NahuatlProcessor(LanguageProcessor):
                         {
                             "audio_filepath": str(chunk_path.absolute()),
                             "duration": seg["duration"],
-                            "text": seg["transcription"],
-                            "translation": seg["translation"],
-                            "pnc": "no",
+                            "text": normalize_text(seg["translation"]),
+                            "transcription": seg["transcription"],
+                            "pnc": "No",
                             "source_lang": "en",
                             "target_lang": "es",
                         }
