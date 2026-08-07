@@ -256,7 +256,6 @@ class NahuatlProcessor(LanguageProcessor):
             "test": [seg for f in test_files for seg in by_audio[f]],
         }
 
-        # 5. Sanity log.
         for name, segs in splits.items():
             files = {"train": train_files, "validation": dev_files, "test": test_files}[
                 name
