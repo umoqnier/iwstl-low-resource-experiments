@@ -1,9 +1,10 @@
 import logging
 
-import datasets
 from huggingface_hub import utils as hf_utils
 from rich.console import Console
 from rich.logging import RichHandler
+
+import datasets
 
 
 def setup_logging(log_file: str = "training_logs.log"):

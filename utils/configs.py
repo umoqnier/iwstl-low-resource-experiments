@@ -1,4 +1,3 @@
-import random
 from pathlib import Path
 
 DATASETS_PATH = Path("datasets")
@@ -11,35 +10,8 @@ QUECHUA_PATH = DATASETS_PATH / Path("quechua")
 MAPUCHE_ID = "mengct00/Mapudungun_iwslt26"
 NAHUATL_PATH = DATASETS_PATH / Path("nahuatl")
 # Audios with translation are Botanica only
-NAHUATL_AUDIOS_PATH = NAHUATL_PATH / Path("Sound-files-Puebla-Nahuatl") / Path("Botanica_579")
-NAHUATL_MANIFESTS_PATH = NAHUATL_PATH / Path("SpeechTranslationManifests")
-
-def generate_split_mapping(
-    root_path: Path, train_ratio=0.8, dev_ratio=0.1, test_ratio=0.1, seed=42
-):
-    """
-    Automatically generates a split mapping by partitioning subdirectories
-    of the root_path.
-    """
-    if not root_path.exists():
-        return {"train": [], "validation": [], "test": []}
-
-    folders = [f.name for f in root_path.iterdir() if f.is_dir()]
-
-    random.seed(seed)
-    random.shuffle(folders)
-
-    total = len(folders)
-    train_end = int(total * train_ratio)
-    dev_end = train_end + int(total * dev_ratio)
-
-    return {
-        "train": folders[:train_end],
-        "validation": folders[train_end:dev_end],
-        "test": folders[dev_end:],
-    }
-
-
-# Generate the Nahuatl splits automatically
-# We target the 'SpeechTranslation' subdirectory specifically
-NAHUATL_SPLITS = generate_split_mapping(NAHUATL_MANIFESTS_PATH)
+NAHUATL_AUDIOS_PATH = (
+    NAHUATL_PATH / Path("Sound-files-Puebla-Nahuatl") / Path("Botanica_579")
+)
+NAHUATL_SOURCE_MANIFESTS_PATH = NAHUATL_PATH / Path("SpeechTranslationManifests")
+SPLITS_RATIOS = {"train": 0.8, "test": 0.2, "validation": 0.1}

@@ -112,6 +112,7 @@ def main(
         out_data_dir=manifests_dir,
         streaming=streaming,
         batch_size=batch_size,
+        lang_mode=language_mode,
     )
     data_loader.prepare_data()
 

@@ -1,9 +1,11 @@
 import logging
 import os
+import random
 import re
 import string
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
@@ -12,7 +14,11 @@ import tqdm
 import yaml
 
 from datasets import load_dataset
-from utils.configs import NAHUATL_AUDIOS_PATH, NAHUATL_MANIFESTS_PATH, NAHUATL_SPLITS
+from utils.configs import (
+    NAHUATL_AUDIOS_PATH,
+    NAHUATL_SOURCE_MANIFESTS_PATH,
+    SPLITS_RATIOS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +40,11 @@ class LanguageProcessor(ABC):
         self.max_examples = max_examples
 
     @abstractmethod
-    def process(self, split: str, streaming: bool) -> list[dict[str, Any]]:
+    def process(self) -> dict:
+        pass
+
+    @abstractmethod
+    def make_splits(self, segments) -> dict:
         pass
 
 
@@ -51,7 +61,10 @@ class MapugungunProcessor(LanguageProcessor):
         self.dataset_id = dataset_id
         self.text_column = text_column
 
-    def process(self, split: str, streaming: bool) -> list[dict[str, Any]]:
+    def make_splits(self, segments):
+        return super().make_splits(segments)
+
+    def process(self):
         logger.info(f"Processing {self.name} split: {split} from HF...")
         dataset = load_dataset(self.dataset_id, split=split, streaming=streaming)
         wav_dir = os.path.join(self.out_dir, f"{self.name}_wavs")
@@ -92,7 +105,7 @@ class MapugungunProcessor(LanguageProcessor):
                         "target_lang": self.name,
                     }
                 )
-        return entries
+        return {}
 
 
 class QuechuaProcessor(LanguageProcessor):
@@ -108,7 +121,7 @@ class QuechuaProcessor(LanguageProcessor):
         self.data_dir = data_dir
         self.split_mapping = split_mapping
 
-    def process(self, split: str, streaming: bool) -> list[dict[str, Any]]:
+    def process(self):
         logger.info(f"Processing {self.name} split: {split} from local files...")
         subdirs = self.split_mapping.get(split, [])
         entries = []
@@ -150,12 +163,31 @@ class NahuatlProcessor(LanguageProcessor):
     ):
         super().__init__(name, out_dir, max_examples)
         self.data_dir = Path(data_dir)
-        self.manifests_dir = NAHUATL_MANIFESTS_PATH
-        self.nahuatl_splits = NAHUATL_SPLITS
+        self.source_manifests_dir = NAHUATL_SOURCE_MANIFESTS_PATH
         self.nahuatl_audios = NAHUATL_AUDIOS_PATH
         self.chunks_dir = self.data_dir / Path("audio_chunks")
+        self.seed = 42
+        self.entries = []
 
-    def cut_audio_chunk(self, audio_path: Path, segment: dict) -> Path:
+    def _load_segments(self) -> list[dict[str, Any]]:
+        """Parse every EAF file and return a flat list"""
+        eaf_files = set()
+        eaf_dirs = [f.name for f in self.source_manifests_dir.iterdir() if f.is_dir()]
+        for eaf_dir in eaf_dirs:
+            eaf_files.update((self.source_manifests_dir / Path(eaf_dir)).glob("*.eaf"))
+        logger.info(f"Found {len(eaf_files)} EAF files")
+
+        segments = []
+        for eaf_path in tqdm.tqdm(sorted(eaf_files), desc=f"{self.name} parsing EAFs"):
+            try:
+                segments.extend(EAFParser(eaf_path).get_segments())
+            except Exception as e:
+                logger.error(f"Error processing {eaf_path}: {e}")
+
+        logger.info(f"Collected {len(segments)} segments in total")
+        return segments
+
+    def cut_audio_chunk(self, audio_path: Path, segment: dict) -> Path | None:
         self.chunks_dir.mkdir(parents=True, exist_ok=True)
         segment_id = segment["start_ts"] + "_" + segment["end_ts"]
         chunk_filename = f"{audio_path.stem}_{segment_id}.wav"
@@ -178,7 +210,7 @@ class NahuatlProcessor(LanguageProcessor):
             logger.warning(
                 f"Invalid chunk duration for {segment_id}: {num_frames} frames"
             )
-            return None
+            raise Exception(f"Invalid chunk duration {segment_id}: {num_frames} frames")
 
         # Read only the specific chunk from the file
         chunk_data = sf.read(audio_path, start=start_sample, frames=num_frames)[0]
@@ -191,46 +223,94 @@ class NahuatlProcessor(LanguageProcessor):
         sf.write(chunk_path, chunk_data, samplerate)
         return chunk_path
 
-    def process(self, split: str, streaming: bool) -> list[dict[str, Any]]:
-        logger.info(f"Processing {self.name} split: {split} from EAF files...")
-        entries = []
-        eaf_files = []
-        manifests_sub_dirs = [
-            self.manifests_dir / Path(dir) for dir in self.nahuatl_splits[split]
-        ]
-        for dir in manifests_sub_dirs:
-            eaf_files.extend(list(dir.glob("*.eaf")))
+    def make_splits(self, segments):
+        if not segments:
+            logger.warning("No segments to split; returning empty splits")
+            return {"train": [], "validation": [], "test": []}
 
-        for eaf_path in tqdm.tqdm(eaf_files, desc=f"{self.name} {split}"):
-            if self.max_examples and len(entries) >= self.max_examples:
-                break
+        by_audio = defaultdict(list)
+        for seg in segments:
+            by_audio[seg["audio_file"]].append(seg)
 
-            try:
-                parser = EAFParser(eaf_path)
-                segments = parser.get_segments()
-                for seg in segments:
-                    if self.max_examples and len(entries) >= self.max_examples:
-                        break
-                    audio_path = self.nahuatl_audios / seg["audio_file"]
-                    if not audio_path.exists():
-                        logger.warning(f"NAHUATL AUDIO PATH {audio_path} NOT FOUND")
-                        break
+        audio_files = sorted(by_audio.keys())
+        rng = random.Random(self.seed)
+        rng.shuffle(audio_files)
 
+        n = len(audio_files)
+        cut_train_full = int(
+            SPLITS_RATIOS["train"] * n
+        )  # boundary between train_full and test
+        cut_dev = int(
+            (1 - SPLITS_RATIOS["validation"]) * cut_train_full
+        )  # boundary between train and dev within train_full
+
+        train_files = audio_files[:cut_dev]
+        dev_files = audio_files[cut_dev:cut_train_full]
+        test_files = audio_files[cut_train_full:]
+
+        assert n == len(train_files) + len(dev_files) + len(test_files)
+        
+        splits = {
+            "train": [seg for f in train_files for seg in by_audio[f]],
+            "validation": [seg for f in dev_files for seg in by_audio[f]],
+            "test": [seg for f in test_files for seg in by_audio[f]],
+        }
+
+        # 5. Sanity log.
+        for name, segs in splits.items():
+            files = {"train": train_files, "validation": dev_files, "test": test_files}[
+                name
+            ]
+            hours = sum(s["duration"] for s in segs) / 3600.0
+            logger.info(
+                f"{self.name} {name}: {len(files)} files, "
+                f"{len(segs)} segments, {hours:.2f} hrs "
+                f"({len(files) / n:.1%} of files)"
+            )
+        all_files = set(train_files) | set(dev_files) | set(test_files)
+        assert len(all_files) == n, "Audio file leakage across splits!"
+        return splits
+
+    def process(self) -> dict:
+        logger.info(f"Processing {self.name} from EAF files...")
+        segments = self._load_segments()
+
+        splits = self.make_splits(segments)
+
+        entries = {name: [] for name in splits}
+
+        for split, segments in splits.items():
+            for seg in segments:
+                entries_count = len(entries[split])
+                if self.max_examples and entries_count >= self.max_examples:
+                    break
+
+                audio_path = self.nahuatl_audios / seg["audio_file"]
+                if not audio_path.exists():
+                    logger.warning(f"NAHUATL AUDIO PATH {audio_path} NOT FOUND")
+                    break
+
+                try:
                     chunk_path = self.cut_audio_chunk(audio_path, seg)
-                    entries.append(
-                        {
-                            "audio_filepath": str(chunk_path.absolute()),
-                            "duration": seg["duration"],
-                            "text": normalize_text(seg["translation"]),
-                            "transcription": seg["transcription"],
-                            "pnc": "No",
-                            "source_lang": "en",
-                            "target_lang": "es",
-                        }
-                    )
-            except Exception as e:
-                logger.error(f"Error processing {eaf_path}: {e}")
+                except Exception as e:
+                    logger.error(f"Error chunking {seg['audio_file']}: {e}")
+                    continue
 
+                entries[split].append(
+                    {
+                        "audio_filepath": str(chunk_path.absolute()),
+                        "duration": seg["duration"],
+                        "text": normalize_text(seg["translation"]),
+                        "transcription": seg["transcription"],
+                        "pnc": "No",
+                        "source_lang": "en",
+                        "target_lang": "es",
+                    }
+                )
+            hours = sum(e["duration"] for e in entries[split]) / 3600.0
+            logger.info(
+                f"{self.name} {split}: {len(entries[split])} segments, {hours:.2f} hrs"
+            )
         return entries
 
 

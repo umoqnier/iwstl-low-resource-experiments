@@ -20,6 +20,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         tokenizer: TokenizerSpec,
         prompt_formatter: PromptFormatter,
         processors: list[LanguageProcessor],
+        lang_mode: str,
         out_data_dir: str = "./combined_data/",
         batch_size: int = 8,
         streaming: bool = False,
@@ -36,6 +37,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
             "validation": os.path.join(out_data_dir, "val_manifest.json"),
             "test": os.path.join(out_data_dir, "test_manifest.json"),
         }
+        self.lang_mode = lang_mode
 
     def _setup_dataloader(self, config: dict):
         rank = self.trainer.global_rank if self.trainer else 0
@@ -83,30 +85,30 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
                 "batch_size": self.batch_size,
                 "num_workers": 4,
                 "shuffle": False,
+                "persistent_workers": True,
+                "pin_memory": True,
             }
         )
 
     def prepare_data(self):
         os.makedirs(self.out_data_dir, exist_ok=True)
-        if os.path.exists(self.manifests["train"]) and os.path.exists(
-            self.manifests["validation"]
+        if (
+            os.path.exists(self.manifests["train"])
+            and os.path.exists(self.manifests["validation"])
+            and os.path.exists(self.manifests["test"])
         ):
             logger.warning("Manifests already exists. Skipping creation")
             return
 
-        for split in ["train", "validation"]:
-            all_lang_entries = [
-                p.process(split, self.streaming) for p in self.processors
-            ]
-            combined_entries = []
+        if self.lang_mode == "multi":
+            all_lang_entries = [p.process() for p in self.processors]
+            entries: list[dict] = []
             for entries_tuple in itertools.zip_longest(*all_lang_entries):
                 for entry in entries_tuple:
                     if entry is not None:
-                        combined_entries.append(entry)
-
-            path = (
-                self.manifests["train"]
-                if split == "train"
-                else self.manifests["validation"]
-            )
-            write_manifest(path, combined_entries)
+                        entries.append(entry)
+        else:
+            # We only have one processor
+            entries = self.processors[0].process()
+        for split in entries:
+            write_manifest(self.manifests[split], entries[split])
