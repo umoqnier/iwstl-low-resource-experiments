@@ -1,5 +1,4 @@
 import itertools
-import logging
 import os
 
 import lightning.pytorch as L
@@ -8,10 +7,23 @@ from nemo.collections.common.data.lhotse import get_lhotse_dataloader_from_confi
 from nemo.collections.common.prompts import PromptFormatter
 from omegaconf import OmegaConf
 
+from utils.logging_utils import get_logger
+
 from .dataset import MyCanaryPromptedAudioToTextLhotseDataset, TokenizerSpec
 from .processors import LanguageProcessor
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+
+_LHOTSE_BASE = {
+    "sample_rate": 16000,
+    "text_field": "text",  # matches the "text" key your processors write
+    "lang_field": "target_lang",
+    "use_bucketing": True,
+    "bucket_duration_bins": [5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 40.0],
+    "num_buckets": 7,  # one per bin above
+    "shuffle_buffer_size": 10000,
+    "bucket_buffer_size": 20000,
+}
 
 
 class CanaryMultilingualDataModule(L.LightningDataModule):
@@ -24,6 +36,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         out_data_dir: str = "./combined_data/",
         batch_size: int = 8,
         streaming: bool = False,
+        num_workers: int = 2,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -32,6 +45,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         self.out_data_dir = out_data_dir
         self.batch_size = batch_size
         self.streaming = streaming
+        self.num_workers = num_workers
         self.manifests = {
             "train": os.path.join(out_data_dir, "train_manifest.json"),
             "validation": os.path.join(out_data_dir, "val_manifest.json"),
@@ -52,43 +66,45 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         )
 
     def train_dataloader(self):
-        return self._setup_dataloader(
-            {
-                "manifest_filepath": self.manifests["train"],
-                "num_buckets": 30,
-                "batch_size": self.batch_size,
-                "num_workers": 4,
-                "shuffle": True,
-                "persistent_workers": True,
-                "pin_memory": True,
-            }
-        )
+        cfg = {
+            **_LHOTSE_BASE,
+            "manifest_filepath": self.manifests["train"],
+            "batch_size": self.batch_size,
+            "max_duration": 40.0,  # cap total seconds per batch
+            "min_duration": 0.1,
+            "num_workers": self.num_workers,
+            "shuffle": True,
+            "pin_memory": True,
+        }
+        return self._setup_dataloader(cfg)
 
     def val_dataloader(self):
-        return self._setup_dataloader(
-            {
-                "manifest_filepath": self.manifests["validation"],
-                "batch_size": self.batch_size,
-                "num_workers": 4,
-                "shuffle": False,
-                "persistent_workers": True,
-                "pin_memory": True,
-            }
-        )
+        cfg = {
+            **_LHOTSE_BASE,
+            "manifest_filepath": self.manifests["validation"],
+            "batch_size": self.batch_size,
+            "max_duration": 40.0,
+            "min_duration": 0.1,
+            "num_workers": self.num_workers,
+            "shuffle": False,
+            "pin_memory": True,
+        }
+        return self._setup_dataloader(cfg)
 
     def test_dataloader(self):
-        if not os.path.exists(self.manifests["test"]):
-            return self.val_dataloader()
-        return self._setup_dataloader(
-            {
-                "manifest_filepath": self.manifests["test"],
-                "batch_size": self.batch_size,
-                "num_workers": 4,
-                "shuffle": False,
-                "persistent_workers": True,
-                "pin_memory": True,
-            }
-        )
+        cfg = {
+            **_LHOTSE_BASE,
+            "manifest_filepath": self.manifests["validation"],
+            "batch_size": self.batch_size,
+            "max_duration": 40.0,
+            "min_duration": 0.1,
+            "num_workers": self.num_workers,
+            "shuffle": False,
+            "pin_memory": True,
+        }
+        # if not os.path.exists(self.manifests["test"]):
+        #    return self._setup_dataloader(cfg)
+        return self._setup_dataloader(cfg)
 
     def prepare_data(self):
         os.makedirs(self.out_data_dir, exist_ok=True)

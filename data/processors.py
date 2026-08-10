@@ -1,4 +1,3 @@
-import logging
 import os
 import random
 import re
@@ -19,8 +18,9 @@ from utils.configs import (
     NAHUATL_SOURCE_MANIFESTS_PATH,
     SPLITS_RATIOS,
 )
+from utils.logging_utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def normalize_text(text: str) -> str:
@@ -249,7 +249,7 @@ class NahuatlProcessor(LanguageProcessor):
         test_files = audio_files[cut_train_full:]
 
         assert n == len(train_files) + len(dev_files) + len(test_files)
-        
+
         splits = {
             "train": [seg for f in train_files for seg in by_audio[f]],
             "validation": [seg for f in dev_files for seg in by_audio[f]],

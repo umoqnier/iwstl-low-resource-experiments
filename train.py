@@ -3,6 +3,9 @@ import os
 import click
 import lightning.pytorch as L
 import nemo.collections.asr as nemo_asr
+
+# Cap PyTorch's CUDA caching allocator so DDP can't hoard system RAM.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 import torch
 from huggingface_hub import login as hf_login
 from lightning.pytorch.callbacks import (
@@ -24,9 +27,7 @@ from utils.configs import (
     NAHUATL_PATH,
     QUECHUA_PATH,
 )
-from utils.logging_utils import setup_logging
-
-logger = setup_logging()
+from utils.logging_utils import get_logger, setup_logging
 
 
 @click.command()
@@ -62,7 +63,32 @@ def main(
     map_dataset_id,
     azz_dataset_dir,
 ):
+    setup_logging(
+        log_file=f"logs/training_logs_{language_mode}.log",
+        level=os.environ.get("LOG_LEVEL", "INFO"),
+    )
+    logger = get_logger(__name__)
+
     hf_login()
+
+    n_gpus = torch.cuda.device_count()
+    logger.info(
+        "Env: PYTORCH_CUDA_ALLOC_CONF=%r, visible_gpus=%d, devices_arg=%d",
+        os.environ.get("PYTORCH_CUDA_ALLOC_CONF"),
+        n_gpus,
+        devices,
+    )
+    if n_gpus > 0:
+        for i in range(n_gpus):
+            free, total = torch.cuda.mem_get_info(i)
+            logger.info(
+                "GPU %d: %s, free=%.2f GiB / total=%.2f GiB",
+                i,
+                torch.cuda.get_device_name(i),
+                free / 2**30,
+                total / 2**30,
+            )
+
     processors = []
     if language_mode in ["map", "multi"]:
         processors.append(
@@ -71,21 +97,8 @@ def main(
             )
         )
     if language_mode in ["que", "multi"]:
-        processors.append(
-            QuechuaProcessor(
-                "que",
-                manifests_dir,
-                que_dataset_dir,
-                {
-                    "train": [
-                        "que_spa_unconstrained/train",
-                        "que_spa_synthetic_translation/train",
-                    ],
-                    "validation": ["que_spa_unconstrained/valid"],
-                },
-                max_examples,
-            )
-        )
+        logger.warning("TODO: implement this :(")
+        return
     if language_mode in ["azz", "multi"]:
         processors.append(
             NahuatlProcessor("azz", manifests_dir, azz_dataset_dir, max_examples)
@@ -96,6 +109,7 @@ def main(
             CANARY_MODEL_ID if torch.cuda.is_available() else CANARY_FLASH_MODEL_ID
         )
 
+    logger.info("Loading base model: %s", model_base)
     model = nemo_asr.models.ASRModel.from_pretrained(model_base)
     model.replace_adapter_compatible_modules()
     model.add_adapter(
@@ -104,6 +118,16 @@ def main(
     )
     model.freeze()
     model.unfreeze_enabled_adapters()
+
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    logger.info(
+        "Model params: trainable=%d (%.2f M), total=%d (%.2f M)",
+        trainable,
+        trainable / 1e6,
+        total,
+        total / 1e6,
+    )
 
     data_loader = CanaryMultilingualDataModule(
         tokenizer=model.tokenizer,
@@ -120,13 +144,22 @@ def main(
     model.cfg.optim.sched.warmup_steps = 25
     os.makedirs(models_dir, exist_ok=True)
 
+    strategy = "ddp" if torch.cuda.device_count() > 1 else "auto"
+    logger.info(
+        "Trainer: devices=%d, strategy=%s, precision=bf16-mixed, "
+        "accumulate_grad_batches=4, gradient_clip_val=1.0",
+        devices,
+        strategy,
+    )
+
     trainer = L.Trainer(
         devices=devices,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
-        strategy="ddp" if torch.cuda.device_count() > 1 else "auto",
+        strategy=strategy,
         max_epochs=max_epochs,
         precision="bf16-mixed",
         accumulate_grad_batches=4,
+        gradient_clip_val=1.0,
         logger=TensorBoardLogger(
             save_dir="logs/tb_logs", name=f"canary_{language_mode}"
         ),
@@ -145,6 +178,15 @@ def main(
         ],
         use_distributed_sampler=False,
     )
+
+    if n_gpus > 1 and data_loader.num_workers >= 4:
+        logger.warning(
+            "num_workers=%d * world_size=%d = %d worker procs. "
+            "If you see OOM at val, lower num_workers to 2.",
+            data_loader.num_workers,
+            n_gpus,
+            data_loader.num_workers * n_gpus,
+        )
 
     last_ckpt = os.path.join(models_dir, "last.ckpt")
     trainer.fit(
