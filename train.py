@@ -109,6 +109,8 @@ def main(
             CANARY_MODEL_ID if torch.cuda.is_available() else CANARY_FLASH_MODEL_ID
         )
 
+    logger.info("Setting up torch float32 matmul precision to medium")
+    torch.set_float32_matmul_precision("medium")
     logger.info("Loading base model: %s", model_base)
     model = nemo_asr.models.ASRModel.from_pretrained(model_base)
     model.replace_adapter_compatible_modules()
@@ -144,7 +146,7 @@ def main(
     model.cfg.optim.sched.warmup_steps = 25
     os.makedirs(models_dir, exist_ok=True)
 
-    strategy = "ddp" if torch.cuda.device_count() > 1 else "auto"
+    strategy = "ddp" if devices > 1 else "auto"
     logger.info(
         "Trainer: devices=%d, strategy=%s, precision=bf16-mixed, "
         "accumulate_grad_batches=4, gradient_clip_val=1.0",
@@ -176,7 +178,7 @@ def main(
             EarlyStopping(monitor="val_loss", patience=5, mode="min"),
             LearningRateMonitor(logging_interval="step"),
         ],
-        use_distributed_sampler=False,
+        use_distributed_sampler=True,
     )
 
     if n_gpus > 1 and data_loader.num_workers >= 4:

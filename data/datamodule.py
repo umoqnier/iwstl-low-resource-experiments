@@ -36,7 +36,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         out_data_dir: str = "./combined_data/",
         batch_size: int = 8,
         streaming: bool = False,
-        num_workers: int = 2,
+        num_workers: int = 4,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -69,7 +69,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         cfg = {
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["train"],
-            "batch_size": self.batch_size,
+            "batch_size": self.batch_size // 4,
             "max_duration": 40.0,  # cap total seconds per batch
             "min_duration": 0.1,
             "num_workers": self.num_workers,
@@ -82,12 +82,12 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         cfg = {
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["validation"],
-            "batch_size": self.batch_size,
-            "max_duration": 40.0,
+            "batch_size": self.batch_size // 4,
+            "max_duration": 15.0,
             "min_duration": 0.1,
-            "num_workers": self.num_workers,
+            "num_workers": 1,
             "shuffle": False,
-            "pin_memory": True,
+            "pin_memory": False,
         }
         return self._setup_dataloader(cfg)
 
@@ -96,11 +96,11 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["validation"],
             "batch_size": self.batch_size,
-            "max_duration": 40.0,
+            "max_duration": 15.0,
             "min_duration": 0.1,
-            "num_workers": self.num_workers,
+            "num_workers": 1,
             "shuffle": False,
-            "pin_memory": True,
+            "pin_memory": False,
         }
         # if not os.path.exists(self.manifests["test"]):
         #    return self._setup_dataloader(cfg)
