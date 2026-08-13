@@ -178,7 +178,7 @@ def main(
             EarlyStopping(monitor="val_loss", patience=5, mode="min"),
             LearningRateMonitor(logging_interval="step"),
         ],
-        use_distributed_sampler=True,
+        use_distributed_sampler=False,
     )
 
     if n_gpus > 1 and data_loader.num_workers >= 4:

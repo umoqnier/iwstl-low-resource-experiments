@@ -79,10 +79,11 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         return self._setup_dataloader(cfg)
 
     def val_dataloader(self):
+        world_size = self.trainer.world_size if self.trainer else 1
         cfg = {
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["validation"],
-            "batch_size": self.batch_size // 4,
+            "batch_size": max(1, self.batch_size // world_size),
             "max_duration": 15.0,
             "min_duration": 0.1,
             "num_workers": 1,
