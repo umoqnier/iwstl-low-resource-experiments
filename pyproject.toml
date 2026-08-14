@@ -24,6 +24,7 @@ dependencies = [
     "torchcodec>=0.10.0",
     #"torchvision>=0.24.1",
     "nemo_toolkit[asr] @ git+https://github.com/NVIDIA-NeMo/Speech.git@main",
+    "bert-score[cu130]>=0.3.13",
 ]
 
 [project.optional-dependencies]

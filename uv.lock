@@ -341,6 +341,27 @@ wheels = [
 ]
 
 [[package]]
+name = "bert-score"
+version = "0.3.13"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "pandas" },
+    { name = "requests" },
+    { name = "torch", version = "2.13.0", source = { registry = "https://pypi.org/simple" }, marker = "(extra == 'extra-30-iwstl-low-resource-experiments-cpu' and extra == 'extra-30-iwstl-low-resource-experiments-cu130') or (extra != 'extra-30-iwstl-low-resource-experiments-cpu' and extra != 'extra-30-iwstl-low-resource-experiments-cu130')" },
+    { name = "torch", version = "2.13.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "extra == 'extra-30-iwstl-low-resource-experiments-cpu'" },
+    { name = "torch", version = "2.13.0+cu130", source = { registry = "https://download.pytorch.org/whl/cu130" }, marker = "extra == 'extra-30-iwstl-low-resource-experiments-cu130'" },
+    { name = "tqdm" },
+    { name = "transformers" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1c/93/2c97a85cbb66a8a256a13176e11c9c4508074e2341299fe75ee955c81eff/bert_score-0.3.13.tar.gz", hash = "sha256:8ffe5838eac8cdd988b8b1a896af7f49071188c8c011a1ed160d71a9899a2ba4", size = 48621, upload-time = "2023-02-20T21:07:29.477Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c6/8c/bc5457de4c004b1a623b31f7bc8d0375fb699b7d67df11879098b4b7b7c8/bert_score-0.3.13-py3-none-any.whl", hash = "sha256:bbbb4c7fcdaa46d7681aff49f37f96faa09ed74e1b150e659bdc6b58a66989b9", size = 61135, upload-time = "2023-02-20T21:07:27.226Z" },
+]
+
+[[package]]
 name = "bleach"
 version = "6.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1177,6 +1198,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "audiomentations" },
+    { name = "bert-score" },
     { name = "datasets" },
     { name = "ipywidgets" },
     { name = "jupyterlab" },
@@ -1208,6 +1230,7 @@ cu130 = [
 [package.metadata]
 requires-dist = [
     { name = "audiomentations", specifier = ">=0.43.1" },
+    { name = "bert-score", extras = ["cu130"], specifier = ">=0.3.13" },
     { name = "datasets", specifier = ">=4.6.1" },
     { name = "ipywidgets", specifier = ">=8.1.8" },
     { name = "jupyterlab", specifier = ">=4.5.5" },
