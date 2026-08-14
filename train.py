@@ -196,7 +196,9 @@ def main(
         data_loader,
         ckpt_path=last_ckpt if os.path.exists(last_ckpt) else None,
     )
-    model.save_adapters(os.path.join(models_dir, f"canary_{language_mode}_final.pt"))
+    final_model_path = os.path.join(models_dir, f"canary_{language_mode}_final.pt")
+    logger.info(f"FINISHED TRAINING. Saving final model at {final_model_path}")
+    model.save_adapters(final_model_path)
 
 
 if __name__ == "__main__":

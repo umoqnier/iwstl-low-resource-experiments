@@ -69,7 +69,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         cfg = {
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["train"],
-            "batch_size": self.batch_size // 4,
+            "batch_size": self.batch_size,
             "max_duration": 40.0,  # cap total seconds per batch
             "min_duration": 0.1,
             "num_workers": self.num_workers,
