@@ -1,0 +1,20 @@
+{
+  "metrics": {
+    "wer": 2.5505779309354586,
+    "bleu": 0.005592891946434975,
+    "chrf2++": 0.11875171214342117,
+    "bertscore_precision": 0.8411878943443298,
+    "bertscore_recall": 0.8418404459953308,
+    "bertscore_f1": 0.8409255743026733
+  },
+  "config": {
+    "base_model": "nvidia/canary-1b-v2",
+    "adapter_path": "models/canary_azz_final_izta_bs_2.pt",
+    "manifest": "manifests/test_manifest.json",
+    "batch_size": 2,
+    "max_samples": null,
+    "source_lang": "en",
+    "target_lang": "es",
+    "num_samples": 1272
+  }
+}
