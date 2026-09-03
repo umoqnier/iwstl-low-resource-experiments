@@ -181,12 +181,12 @@ def main(
         accumulate_grad_batches=4,
         gradient_clip_val=1.0,
         logger=TensorBoardLogger(
-            save_dir="logs/tb_logs", name=f"canary_{language_mode}"
+            save_dir=f"logs/{lang_mode}", name=f"canary_{language_mode}"
         ),
         callbacks=[
             ModelCheckpoint(
                 dirpath=models_dir,
-                filename="canary_adapter_{epoch:02d}",
+                filename="canary_adapter_azz_{epoch:02d}",
                 every_n_epochs=3,
                 save_top_k=10,
                 monitor="step",
@@ -214,7 +214,10 @@ def main(
         data_loader,
         ckpt_path=last_ckpt if os.path.exists(last_ckpt) else None,
     )
-    final_model_path = os.path.join(models_dir, f"canary_{language_mode}_final.pt")
+    final_model_path = os.path.join(
+        models_dir,
+        f"canary_{language_mode}_enc_adap_{adapter_enc_dim}_dec_adap_{adapter_dec_dim}_final.pt",
+    )
     logger.info(f"FINISHED TRAINING. Saving final model at {final_model_path}")
     model.save_adapters(final_model_path)
 
