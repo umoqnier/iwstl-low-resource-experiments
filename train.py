@@ -41,6 +41,8 @@ from utils.logging_utils import get_logger, setup_logging
 )
 @click.option("--devices", type=int, default=1)
 @click.option("--batch-size", type=int, default=8)
+@click.option("--adapter-enc-dim", type=int, default=32)
+@click.option("--adapter-dec-dim", type=int, default=32)
 @click.option("--max-examples", type=int, default=None)
 @click.option("--max-epochs", type=int, default=50)
 @click.option("--streaming/--no-streaming", default=True)
@@ -54,6 +56,8 @@ def main(
     model_base,
     devices,
     batch_size,
+    adapter_enc_dim,
+    adapter_dec_dim,
     max_examples,
     max_epochs,
     streaming,
@@ -113,10 +117,24 @@ def main(
     torch.set_float32_matmul_precision("medium")
     logger.info("Loading base model: %s", model_base)
     model = nemo_asr.models.ASRModel.from_pretrained(model_base)
+
+    # Enable adapters
     model.replace_adapter_compatible_modules()
+
+    # Training acustic processing
     model.add_adapter(
-        name="encoder:enc",
-        cfg=LinearAdapterConfig(in_features=model.cfg.encoder.d_model, dim=8),
+        name="transf_encoder:enc",
+        cfg=LinearAdapterConfig(
+            in_features=model.cfg.encoder.d_model, dim=adapter_enc_dim
+        ),
+    )
+
+    # Adapting text generation (due to code-switching)
+    model.add_adapter(
+        name="tranf_decoder:dec",
+        cfg=LinearAdapterConfig(
+            in_features=model.cfg.encoder.d_model, dim=adapter_dec_dim
+        ),
     )
     model.freeze()
     model.unfreeze_enabled_adapters()
