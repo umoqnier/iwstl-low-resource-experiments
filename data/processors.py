@@ -14,8 +14,10 @@ import yaml
 
 from datasets import load_dataset
 from utils.configs import (
+    MAPUCHE_DATASET_PATH,
     NAHUATL_AUDIOS_PATH,
-    NAHUATL_SOURCE_MANIFESTS_PATH,
+    NAHUATL_TRANSCRIPTIONS_PATH,
+    NAHUATL_TRANSLATIONS_PATH,
     SPLITS_RATIOS,
 )
 from utils.logging_utils import get_logger
@@ -54,58 +56,71 @@ class MapugungunProcessor(LanguageProcessor):
         name: str,
         out_dir: str,
         dataset_id: str,
+        streaming: bool,
         text_column: str,
         max_examples: int | None = None,
     ):
         super().__init__(name, out_dir, max_examples)
         self.dataset_id = dataset_id
         self.text_column = text_column
+        self.streaming = streaming
+        self.splits = ["train", "validation", "test"]
 
     def make_splits(self, segments):
-        return super().make_splits(segments)
+        return segments
 
-    def process(self):
-        logger.info(f"Processing {self.name} split: {split} from HF...")
-        dataset = load_dataset(self.dataset_id, split=split, streaming=streaming)
-        wav_dir = os.path.join(self.out_dir, f"{self.name}_wavs")
-        os.makedirs(wav_dir, exist_ok=True)
+    def process(self, task="ast"):
+        logger.info(f"Processing {self.name} from HF")
 
-        if self.max_examples is not None:
-            dataset = (
-                dataset.take(self.max_examples)
-                if streaming
-                else dataset.select(range(min(len(dataset), self.max_examples)))
-            )
+        dataset_dict = load_dataset(self.dataset_id, streaming=self.streaming)
+        entries = {"train": [], "validation": [], "test": []}
+        for split, dataset in dataset_dict.items():
+            logger.info(f"Split = {split}")
 
-        entries = []
-        total = (
-            self.max_examples if streaming else len(dataset) if not streaming else None
-        )
+            wav_chunks_dir = MAPUCHE_DATASET_PATH / Path(split)
+            if not wav_chunks_dir.exists():
+                os.makedirs(wav_chunks_dir, exist_ok=True)
 
-        for idx, item in tqdm.tqdm(
-            enumerate(dataset), total=total, desc=f"{self.name} {split}"
-        ):
-            audio_info = item.get("audio")
-            if not audio_info:
-                continue
-            filepath = os.path.join(wav_dir, f"{self.name}_{split}_{idx}.wav")
-            if not os.path.exists(filepath):
-                sf.write(filepath, audio_info["array"], audio_info["sampling_rate"])
+            if self.max_examples is not None:
+                if self.streaming:
+                    dataset = dataset.take(self.max_examples)
+                else:
+                    dataset = dataset.select(
+                        range(min(len(dataset), self.max_examples))
+                    )
+            else:
+                # TODO: Implement this
+                pass
 
-            duration = len(audio_info["array"]) / audio_info["sampling_rate"]
-            text = item.get(self.text_column, "")
-            if text:
-                entries.append(
-                    {
-                        "audio_filepath": os.path.abspath(filepath),
-                        "duration": duration,
-                        "text": text,
-                        "pnc": "no",
-                        "source_lang": "en",
-                        "target_lang": self.name,
-                    }
-                )
-        return {}
+            for idx, item in enumerate(dataset):
+                audio_info = item.get("audio")
+                if not audio_info:
+                    continue
+
+                filepath = wav_chunks_dir / Path(f"{self.name}_{idx}.wav")
+                if not filepath.exists():
+                    sf.write(filepath, audio_info["array"], audio_info["sampling_rate"])
+
+                duration = len(audio_info["array"]) / audio_info["sampling_rate"]
+                spanish_text = item.get(self.text_column, "")
+                arn_text = item.get("arn", "")
+                arn_clean_text = item.get("arn_clean", "")
+                if spanish_text:
+                    # TODO: Base on task "text" field need to change from spanish to mapuche
+                    entries[split].append(
+                        {
+                            "arn": arn_text,
+                            "arn_clean": arn_clean_text,
+                            "spa": spanish_text,
+                            "text": normalize_text(spanish_text),
+                            "duration": duration,
+                            "pnc": "no",
+                            "source_lang": "en",
+                            "target_lang": "es",
+                            "audio_filepath": os.path.abspath(filepath),
+                        }
+                    )
+        return entries
 
 
 class QuechuaProcessor(LanguageProcessor):
@@ -163,7 +178,8 @@ class NahuatlProcessor(LanguageProcessor):
     ):
         super().__init__(name, out_dir, max_examples)
         self.data_dir = Path(data_dir)
-        self.source_manifests_dir = NAHUATL_SOURCE_MANIFESTS_PATH
+        self.translations_path = NAHUATL_TRANSLATIONS_PATH
+        self.transcription_path = NAHUATL_TRANSCRIPTIONS_PATH
         self.nahuatl_audios = NAHUATL_AUDIOS_PATH
         self.chunks_dir = self.data_dir / Path("audio_chunks")
         self.seed = 42
@@ -172,9 +188,9 @@ class NahuatlProcessor(LanguageProcessor):
     def _load_segments(self) -> list[dict[str, Any]]:
         """Parse every EAF file and return a flat list"""
         eaf_files = set()
-        eaf_dirs = [f.name for f in self.source_manifests_dir.iterdir() if f.is_dir()]
+        eaf_dirs = [f.name for f in self.translations_path.iterdir() if f.is_dir()]
         for eaf_dir in eaf_dirs:
-            eaf_files.update((self.source_manifests_dir / Path(eaf_dir)).glob("*.eaf"))
+            eaf_files.update((self.translations_path / Path(eaf_dir)).glob("*.eaf"))
         logger.info(f"Found {len(eaf_files)} EAF files")
 
         segments = []
