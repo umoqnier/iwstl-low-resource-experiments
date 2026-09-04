@@ -45,6 +45,7 @@ from utils.logging_utils import get_logger, setup_logging
 @click.option("--adapter-dec-dim", type=int, default=32)
 @click.option("--max-examples", type=int, default=None)
 @click.option("--max-epochs", type=int, default=50)
+@click.option("--num-data-workers", typer=int, default=4)
 @click.option("--streaming/--no-streaming", default=True)
 @click.option("--models-dir", type=click.Path(), default=MODELS_PATH)
 @click.option("--manifests-dir", type=click.Path(), default=MANIFESTS_PATH)
@@ -60,6 +61,7 @@ def main(
     adapter_dec_dim,
     max_examples,
     max_epochs,
+    num_data_workers,
     streaming,
     models_dir,
     manifests_dir,
@@ -115,7 +117,7 @@ def main(
 
     logger.info("Setting up torch float32 matmul precision to medium")
     torch.set_float32_matmul_precision("medium")
-    logger.info("Loading base model: %s", model_base)
+    logger.info(f"Loading base model: {model_base}")
     model = nemo_asr.models.ASRModel.from_pretrained(model_base)
 
     # Enable adapters
@@ -131,7 +133,7 @@ def main(
 
     # Adapting text generation (due to code-switching)
     model.add_adapter(
-        name="tranf_decoder:dec",
+        name="transf_decoder:dec",
         cfg=LinearAdapterConfig(
             in_features=model.cfg.encoder.d_model, dim=adapter_dec_dim
         ),
@@ -142,17 +144,17 @@ def main(
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
     logger.info(
-        "Model params: trainable=%d (%.2f M), total=%d (%.2f M)",
-        trainable,
-        trainable / 1e6,
-        total,
-        total / 1e6,
+        f"Model params: trainable={trainable} ({trainable / 1e6:.2f} B), total={total} ({total / 1e6:.2f} M)",
+    )
+    logger.info(
+        f"Apapters: transf_enc={adapter_enc_dim} | transf_deco={adapter_dec_dim}"
     )
 
     data_loader = CanaryMultilingualDataModule(
         tokenizer=model.tokenizer,
         prompt_formatter=model.prompt,
         processors=processors,
+        num_workers=num_data_workers,
         out_data_dir=manifests_dir,
         streaming=streaming,
         batch_size=batch_size,
@@ -166,10 +168,7 @@ def main(
 
     strategy = "ddp" if devices > 1 else "auto"
     logger.info(
-        "Trainer: devices=%d, strategy=%s, precision=bf16-mixed, "
-        "accumulate_grad_batches=4, gradient_clip_val=1.0",
-        devices,
-        strategy,
+        f"Trainer: devices={devices}, strategy={strategy}, precision=bf16-mixed, accumulate_grad_batches=4, gradient_clip_val=1.0",
     )
 
     trainer = L.Trainer(
@@ -181,7 +180,8 @@ def main(
         accumulate_grad_batches=4,
         gradient_clip_val=1.0,
         logger=TensorBoardLogger(
-            save_dir=f"logs/{lang_mode}", name=f"canary_{language_mode}"
+            save_dir="logs",
+            name=f"canary_{language_mode}_enc_adap_{adapter_enc_dim}_dec_adap_{adapter_dec_dim}",
         ),
         callbacks=[
             ModelCheckpoint(
@@ -199,14 +199,9 @@ def main(
         use_distributed_sampler=False,
     )
 
-    if n_gpus > 1 and data_loader.num_workers >= 4:
-        logger.warning(
-            "num_workers=%d * world_size=%d = %d worker procs. "
-            "If you see OOM at val, lower num_workers to 2.",
-            data_loader.num_workers,
-            n_gpus,
-            data_loader.num_workers * n_gpus,
-        )
+    logger.warning(
+        f"num_workers={data_loader.num_workers} * world_size={n_gpus} = {data_loader.num_workers * n_gpus} worker procs."
+    )
 
     last_ckpt = os.path.join(models_dir, "last.ckpt")
     trainer.fit(

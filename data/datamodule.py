@@ -83,10 +83,10 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         cfg = {
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["validation"],
-            "batch_size": max(1, self.batch_size // world_size),
+            "batch_size": self.batch_size,
             "max_duration": 15.0,
             "min_duration": 0.1,
-            "num_workers": 1,
+            "num_workers": self.num_workers,
             "shuffle": False,
             "pin_memory": False,
         }
