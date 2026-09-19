@@ -1,8 +1,11 @@
 import copy
+import glob
 import os
 import random
 import re
 import string
+import subprocess
+import tarfile
 import xml.etree.ElementTree as ET
 from abc import ABC, abstractmethod
 from collections import defaultdict
@@ -12,6 +15,7 @@ from typing import Any
 import librosa
 import soundfile as sf
 import tqdm
+import wget
 import yaml
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 
@@ -504,6 +508,8 @@ class AN4Processor(LanguageProcessor):
 
             {"train": [...], "validation": [], "test": [...]}
         """
+        self._prepare_data()
+
         # ── 1. read base ASR manifests ───────────────────────
         train_entries = self._read_transcription_file(
             self.train_transcripts, "an4/wav/an4_clstk"
@@ -540,12 +546,19 @@ class AN4Processor(LanguageProcessor):
             write_manifest(self.ast_test_manifest, ast_test)
 
         # ── 3. combine ASR + AST → combined manifests ────────
-        combined_train = list(train_entries) + (
+        combined_train_all = list(train_entries) + (
             copy.deepcopy(ast_train) if self.do_ast else []
         )
         combined_test = list(test_entries) + (
             copy.deepcopy(ast_test) if self.do_ast else []
         )
+
+        # Split a portion of train for validation
+        random.seed(42)
+        random.shuffle(combined_train_all)
+        val_size = int(len(combined_train_all) * 0.1)
+        combined_val = combined_train_all[:val_size]
+        combined_train = combined_train_all[val_size:]
 
         from nemo.collections.asr.parts.utils.manifest_utils import write_manifest
 
@@ -555,12 +568,38 @@ class AN4Processor(LanguageProcessor):
         write_manifest(self.combined_test_manifest, combined_test)
 
         # Return dict in the same shape as other processors:
-        # {"train": ..., "validation": [], "test": ...}
+        # {"train": ..., "validation": ..., "test": ...}
         return {
             "train": combined_train,
-            "validation": [],
+            "validation": combined_val,
             "test": combined_test,
         }
+
+    def _prepare_data(self):
+        """Download, extract, and convert AN4 dataset if not present."""
+        data_dir = self.data_dir
+        tar_path = data_dir / "an4_sphere.tar.gz"
+
+        if not tar_path.exists():
+            logger.info("Downloading AN4 dataset...")
+            an4_url = (
+                "https://dldata-public.s3.us-east-2.amazonaws.com/an4_sphere.tar.gz"
+            )
+            wget.download(an4_url, str(data_dir))
+        else:
+            logger.info("Tarfile already exists.")
+
+        if not (data_dir / "an4").exists():
+            logger.info("Extracting AN4 dataset...")
+            with tarfile.open(tar_path) as tar:
+                tar.extractall(path=data_dir)
+
+            logger.info("Converting .sph to .wav...")
+            sph_list = glob.glob(str(data_dir / "an4/**/*.sph"), recursive=True)
+            for sph_path in tqdm.tqdm(sph_list, desc="Converting SPH to WAV"):
+                wav_path = sph_path[:-4] + ".wav"
+                subprocess.run(["sox", sph_path, wav_path])
+            logger.info("Finished conversion.")
 
     def make_splits(self, segments) -> dict:
         """AN4 uses pre-defined splits from the transcription files; this is a no-op."""

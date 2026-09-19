@@ -118,12 +118,11 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
             return
 
         if self.lang_mode == "multi":
-            all_lang_entries = [p.process() for p in self.processors]
-            entries: list[dict] = []
-            for entries_tuple in itertools.zip_longest(*all_lang_entries):
-                for entry in entries_tuple:
-                    if entry is not None:
-                        entries.append(entry)
+            all_lang_results = [p.process() for p in self.processors]
+            entries = {"train": [], "validation": [], "test": []}
+            for result in all_lang_results:
+                for split, data in result.items():
+                    entries[split].extend(data)
         else:
             # We only have one processor
             entries = self.processors[0].process()
