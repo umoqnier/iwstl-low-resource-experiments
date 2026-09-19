@@ -17,10 +17,16 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from nemo.collections.common.parts import LinearAdapterConfig
 
 from data.datamodule import CanaryMultilingualDataModule
-from data.processors import MapugungunProcessor, NahuatlProcessor, QuechuaProcessor
+from data.processors import (
+    AN4Processor,
+    MapugungunProcessor,
+    NahuatlProcessor,
+    QuechuaProcessor,
+)
 from utils.configs import (
     CANARY_FLASH_MODEL_ID,
     CANARY_MODEL_ID,
+    DATASETS_PATH,
     MANIFESTS_PATH,
     MAPUCHE_ID,
     MODELS_PATH,
@@ -33,7 +39,7 @@ from utils.logging_utils import get_logger, setup_logging
 @click.command()
 @click.option(
     "--language-mode",
-    type=click.Choice(["map", "que", "azz", "multi"]),
+    type=click.Choice(["map", "que", "azz", "an4", "multi"]),
     default="azz",
 )
 @click.option(
@@ -42,16 +48,17 @@ from utils.logging_utils import get_logger, setup_logging
 @click.option("--devices", type=int, default=1)
 @click.option("--batch-size", type=int, default=8)
 @click.option("--adapter-enc-dim", type=int, default=32)
-@click.option("--adapter-dec-dim", type=int, default=32)
+@click.option("--adapter-dec-dim", type=int, default=None)
 @click.option("--max-examples", type=int, default=None)
 @click.option("--max-epochs", type=int, default=50)
-@click.option("--num-data-workers", typer=int, default=4)
+@click.option("--num-data-workers", type=int, default=4)
 @click.option("--streaming/--no-streaming", default=True)
 @click.option("--models-dir", type=click.Path(), default=MODELS_PATH)
 @click.option("--manifests-dir", type=click.Path(), default=MANIFESTS_PATH)
 @click.option("--que-dataset-dir", type=click.Path(), default=QUECHUA_PATH)
 @click.option("--map-dataset-id", type=str, default=MAPUCHE_ID)
 @click.option("--azz-dataset-dir", type=click.Path(), default=NAHUATL_PATH)
+@click.option("--an4-data-dir", type=click.Path(), default=DATASETS_PATH / "an4")
 def main(
     language_mode,
     model_base,
@@ -68,6 +75,7 @@ def main(
     que_dataset_dir,
     map_dataset_id,
     azz_dataset_dir,
+    an4_data_dir,
 ):
     setup_logging(
         log_file=f"logs/training_logs_{language_mode}.log",
@@ -96,7 +104,13 @@ def main(
             )
 
     processors = []
-    if language_mode in ["map", "multi"]:
+    if language_mode == "an4":
+        processors.append(
+            AN4Processor(
+                "an4", manifests_dir / language_mode, an4_data_dir, max_examples
+            )
+        )
+    elif language_mode in ["map", "multi"]:
         processors.append(
             MapugungunProcessor(
                 "map", manifests_dir, map_dataset_id, "spa", max_examples
@@ -122,33 +136,26 @@ def main(
 
     # Enable adapters
     model.replace_adapter_compatible_modules()
-
     # Training acustic processing
     model.add_adapter(
-        name="transf_encoder:enc",
+        name="encoder:enc",
         cfg=LinearAdapterConfig(
             in_features=model.cfg.encoder.d_model, dim=adapter_enc_dim
         ),
     )
 
-    # Adapting text generation (due to code-switching)
-    model.add_adapter(
-        name="transf_decoder:dec",
-        cfg=LinearAdapterConfig(
-            in_features=model.cfg.encoder.d_model, dim=adapter_dec_dim
-        ),
-    )
+    if adapter_dec_dim is not None:
+        # Adapting text generation (due to code-switching)
+        model.add_adapter(
+            name="transf_decoder:dec",
+            cfg=LinearAdapterConfig(
+                in_features=model.cfg.encoder.d_model, dim=adapter_dec_dim
+            ),
+        )
     model.freeze()
     model.unfreeze_enabled_adapters()
 
-    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    total = sum(p.numel() for p in model.parameters())
-    logger.info(
-        f"Model params: trainable={trainable} ({trainable / 1e6:.2f} B), total={total} ({total / 1e6:.2f} M)",
-    )
-    logger.info(
-        f"Apapters: transf_enc={adapter_enc_dim} | transf_deco={adapter_dec_dim}"
-    )
+    model.summarize()
 
     data_loader = CanaryMultilingualDataModule(
         tokenizer=model.tokenizer,
@@ -160,7 +167,8 @@ def main(
         batch_size=batch_size,
         lang_mode=language_mode,
     )
-    data_loader.prepare_data()
+
+    # data_loader.prepare_data()
 
     model.cfg.optim.lr = 3e-4
     model.cfg.optim.sched.warmup_steps = 25
@@ -186,7 +194,7 @@ def main(
         callbacks=[
             ModelCheckpoint(
                 dirpath=models_dir,
-                filename="canary_adapter_azz_{epoch:02d}",
+                filename=f"canary_adapter_{language_mode}_{{epoch:02d}}",
                 every_n_epochs=3,
                 save_top_k=10,
                 monitor="step",

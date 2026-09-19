@@ -1,3 +1,4 @@
+import copy
 import os
 import random
 import re
@@ -8,9 +9,11 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+import librosa
 import soundfile as sf
 import tqdm
 import yaml
+from transformers import T5ForConditionalGeneration, T5Tokenizer
 
 from datasets import load_dataset
 from utils.configs import (
@@ -412,3 +415,209 @@ class EAFParser:
             for seg in transcriptions.values()
             if seg["translation"]
         ]
+
+
+class AN4Processor(LanguageProcessor):
+    """
+    Processor for the AN4 dataset that generates both ASR (English) and AST
+    (English → German) manifest entries.
+
+    Mirrors the tutorial in Multi_Task_Adapters.py: it reads transcription files,
+    builds ASR manifests, uses T5-small to translate English text into German for
+    AST manifests, and writes combined train/test manifest pairs.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        out_dir: str,
+        data_dir: str,
+        max_examples: int | None = None,
+        do_ast: bool = True,
+    ):
+        super().__init__(name, out_dir, max_examples)
+        self.data_dir = Path(data_dir)
+        self.do_ast = do_ast
+
+        # Paths inside the extracted AN4 archive
+        self.train_transcripts = (
+            self.data_dir / "an4" / "etc" / "an4_train.transcription"
+        )
+        self.test_transcripts = self.data_dir / "an4" / "etc" / "an4_test.transcription"
+        self.wav_subdir = "wav"
+
+        # Output manifests
+        self.train_manifest = os.path.join(out_dir, "train_manifest.json")
+        self.test_manifest = os.path.join(out_dir, "test_manifest.json")
+        self.ast_train_manifest = os.path.join(out_dir, "ast_train_manifest.json")
+        self.ast_test_manifest = os.path.join(out_dir, "ast_test_manifest.json")
+        self.combined_train_manifest = os.path.join(
+            out_dir, "combined_train_manifest.json"
+        )
+        self.combined_test_manifest = os.path.join(
+            out_dir, "combined_test_manifest.json"
+        )
+
+        # Cached T5 model (lazy-loaded)
+        self._t5_model = None
+        self._t5_tokenizer = None
+
+    # ── helpers ──────────────────────────────────────────────
+
+    @property
+    def t5_model(self):
+        """Lazy-load the T5 model for translation."""
+        if self._t5_model is None:
+            import torch
+
+            self._t5_tokenizer = T5Tokenizer.from_pretrained("google-t5/t5-small")
+            self._t5_model = T5ForConditionalGeneration.from_pretrained(
+                "google-t5/t5-small"
+            )
+            if torch.cuda.is_available():
+                self._t5_model = self._t5_model.cuda()
+        return self._t5_model
+
+    @property
+    def t5_tokenizer(self):
+        if self._t5_tokenizer is None:
+            _ = self.t5_model  # trigger lazy load
+        return self._t5_tokenizer
+
+    def translate_batch(self, texts: list[str]) -> list[str]:
+        """Translate a batch of English texts into German via T5."""
+        prefix = "translate English to German"
+        prompts = [f"{prefix}: {t}" for t in texts]
+        input_ids = self.t5_tokenizer(
+            prompts, return_tensors="pt", padding=True, truncation=True
+        ).input_ids.to(self.t5_model.device)
+        outputs = self.t5_model.generate(input_ids, max_new_tokens=64)
+        return [self.t5_tokenizer.decode(o, skip_special_tokens=True) for o in outputs]
+
+    # ── public API ───────────────────────────────────────────
+
+    def process(self):
+        """
+        Build ASR + AST manifests from AN4 transcription files and return a dict
+        mapping split names → list of manifest entries, identical in structure to
+        the other LanguageProcessor implementations:
+
+            {"train": [...], "validation": [], "test": [...]}
+        """
+        # ── 1. read base ASR manifests ───────────────────────
+        train_entries = self._read_transcription_file(
+            self.train_transcripts, "an4/wav/an4_clstk"
+        )
+        test_entries = self._read_transcription_file(
+            self.test_transcripts, "an4/wav/an4test_clstk"
+        )
+
+        # ── 2. generate AST manifests (EN→DE) ────────────────
+        if self.do_ast:
+            ast_train = copy.deepcopy(train_entries)
+            ast_test = copy.deepcopy(test_entries)
+            batch_size = 32
+
+            for i in tqdm.tqdm(
+                range(0, len(train_entries), batch_size), desc="AST train"
+            ):
+                batch_texts = [x["text"] for x in train_entries[i : i + batch_size]]
+                translations = self.translate_batch(batch_texts)
+                for j, t in enumerate(translations):
+                    ast_train[i + j]["text"] = t
+                    ast_train[i + j]["task"] = "ast"
+                    ast_train[i + j]["target_lang"] = "de"
+
+            for idx, entry in tqdm.tqdm(enumerate(ast_test), desc="AST test"):
+                trans = self.translate_batch([entry["text"]])[0]
+                ast_test[idx]["text"] = trans
+                ast_test[idx]["task"] = "ast"
+                ast_test[idx]["target_lang"] = "de"
+
+            from nemo.collections.asr.parts.utils.manifest_utils import write_manifest
+
+            write_manifest(self.ast_train_manifest, ast_train)
+            write_manifest(self.ast_test_manifest, ast_test)
+
+        # ── 3. combine ASR + AST → combined manifests ────────
+        combined_train = list(train_entries) + (
+            copy.deepcopy(ast_train) if self.do_ast else []
+        )
+        combined_test = list(test_entries) + (
+            copy.deepcopy(ast_test) if self.do_ast else []
+        )
+
+        from nemo.collections.asr.parts.utils.manifest_utils import write_manifest
+
+        write_manifest(self.train_manifest, train_entries)
+        write_manifest(self.test_manifest, test_entries)
+        write_manifest(self.combined_train_manifest, combined_train)
+        write_manifest(self.combined_test_manifest, combined_test)
+
+        # Return dict in the same shape as other processors:
+        # {"train": ..., "validation": [], "test": ...}
+        return {
+            "train": combined_train,
+            "validation": [],
+            "test": combined_test,
+        }
+
+    def make_splits(self, segments) -> dict:
+        """AN4 uses pre-defined splits from the transcription files; this is a no-op."""
+        return {
+            "train": segments if isinstance(segments, list) else [],
+            "validation": [],
+            "test": [],
+        }
+
+    # ── internal: read transcription file → manifest entries ─
+
+    def _read_transcription_file(
+        self, transcripts_path: Path, wav_subdir_rel: str
+    ) -> list[dict]:
+        """
+        Parse an AN4 .transcription file and return manifest-compatible entries.
+
+        Each line looks like:
+            <s> transcript text </s> (fileID)
+        """
+        if not transcripts_path.exists():
+            raise FileNotFoundError(f"Transcription file not found: {transcripts_path}")
+
+        entries = []
+        with open(transcripts_path, "r") as fin:
+            for line in fin:
+                # Parse transcript and file ID
+                paren_idx = line.find("(")
+                if paren_idx == -1:
+                    continue
+                transcript = line[:paren_idx].lower().strip()
+                transcript = transcript.replace("<s>", "").replace("</s>", "")
+
+                file_id = line[paren_idx + 1 : -2]  # e.g. "cen4-fash-b"
+                speaker_subdir = file_id[file_id.find("-") + 1 : file_id.rfind("-")]
+                audio_filename = file_id + ".wav"
+                audio_path = os.path.join(
+                    self.data_dir, wav_subdir_rel, speaker_subdir, audio_filename
+                )
+
+                if not os.path.isfile(audio_path):
+                    continue
+
+                duration = librosa.core.get_duration(path=audio_path)
+                entries.append(
+                    {
+                        "audio_filepath": os.path.abspath(audio_path),
+                        "duration": float(duration),
+                        "text": transcript,
+                        "pnc": "no",
+                        "source_lang": "en",
+                        "target_lang": "en",
+                        "task": "asr",
+                    }
+                )
+
+        if self.max_examples is not None:
+            entries = entries[: self.max_examples]
+
+        return entries
