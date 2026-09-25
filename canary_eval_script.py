@@ -108,6 +108,13 @@ def eval_model(predictions: list, gt_texts: list) -> dict:
     return {"wer": wer, "bleu": bleu_val, "chrf2++": chrf2pp_val, **bert_scores}
 
 
+def run_evaluation(model, file_paths, gt_texts, batch_size):
+    """Runs predictions and calculates metrics for a given model."""
+    preds = run_predictions(model, file_paths, batch_size, "en", "es")
+    metrics = eval_model(preds, gt_texts)
+    return metrics, preds
+
+
 def save_results_json(
     results: dict,
     output_path: str | Path,
@@ -168,6 +175,12 @@ def save_results_json(
     default=None,
     help="Optional path to save the metrics as JSON (e.g. results/run_01.json).",
 )
+@click.option(
+    "--baseline",
+    is_flag=True,
+    default=False,
+    help="Indicate if this run is for calculating baseline metrics from vanilla model.",
+)
 def main(
     manifest,
     adapter_path,
@@ -176,75 +189,142 @@ def main(
     max_samples,
     print_examples,
     output_json,
+    baseline,
 ):
     """Evaluates a Canary AST model with or without adapters."""
 
     click.echo(f"Loading base model: {base_model}...")
     model = nemo_asr.models.ASRModel.from_pretrained(base_model)
-
-    # Load adapters only if a path is provided
-    if adapter_path:
-        click.echo("Configuring architecture for adapters...")
-        model.replace_adapter_compatible_modules()
-        click.echo(f"Loading adapters from: {adapter_path}...")
-        model.load_adapters(adapter_path)
-    else:
-        click.echo("No adapter path provided. Evaluating base model only.")
-
     model.eval()
 
     # Load Data
     click.echo(f"Loading evaluation data from: {manifest}...")
     file_paths, gt_texts = get_eval_data(manifest, max_samples=max_samples)
 
-    # Transcribe
-    click.echo(
-        f"Running predictions on {len(file_paths)} samples (Batch Size: {batch_size})..."
+    baseline_metrics = None
+    baseline_preds = None
+    adapted_metrics = None
+    adapted_preds = None
+
+    # 1. Baseline Evaluation
+    if baseline:
+        click.echo("\n--- Phase 1: Baseline Evaluation (Vanilla Model) ---")
+        baseline_metrics, baseline_preds = run_evaluation(
+            model, file_paths, gt_texts, batch_size
+        )
+        click.echo("Baseline metrics calculated.")
+
+    # 2. Adaptation / Main Evaluation
+    click.echo("\n--- Phase 2: Main Evaluation ---")
+    if adapter_path and not (baseline and not adapter_path):
+        # If we are in baseline mode, we only load adapters if adapter_path is actually provided
+        # If we are NOT in baseline mode, we load adapters if provided
+        click.echo("Configuring architecture for adapters...")
+        model.replace_adapter_compatible_modules()
+        click.echo(f"Loading adapters from: {adapter_path}...")
+        model.load_adapters(adapter_path)
+    elif not baseline:
+        click.echo("No adapter path provided. Evaluating base model only.")
+    elif baseline and not adapter_path:
+        click.echo(
+            "Baseline mode active but no adapter path provided. Skipping adapted evaluation."
+        )
+
+    adapted_metrics, adapted_preds = run_evaluation(
+        model, file_paths, gt_texts, batch_size
     )
-    preds = run_predictions(model, file_paths, batch_size, "en", "es")
+    click.echo("Main evaluation metrics calculated.")
 
-    # Metrics
-    click.echo("Calculating metrics...")
-    result = eval_model(preds, gt_texts)
+    # If baseline was requested but no adapter provided, adapted is same as baseline
+    if baseline and not adapter_path:
+        adapted_metrics = baseline_metrics
+        adapted_preds = baseline_preds
 
-    # Save JSON if requested
+    # Save JSON results
     if output_json:
-        config = {
-            "base_model": base_model,
-            "adapter_path": adapter_path,
-            "manifest": manifest,
-            "batch_size": batch_size,
-            "max_samples": max_samples,
-            "source_lang": "en",
-            "target_lang": "es",
-            "num_samples": len(preds),
-        }
-        written = save_results_json(result, output_json, config=config)
-        click.echo(f"💾 Results saved to: {written}")
+        output_path = Path(output_json)
 
-    # Random Examples
-    if print_examples > 0 and len(preds) > 0:
-        click.echo(f"🔍 Printing {min(print_examples, len(preds))} random examples:\n")
+        if baseline:
+            # Save baseline
+            baseline_config = {
+                "base_model": base_model,
+                "adapter_path": None,
+                "baseline": True,
+                "manifest": manifest,
+                "batch_size": batch_size,
+                "max_samples": max_samples,
+                "source_lang": "en",
+                "target_lang": "es",
+                "num_samples": len(baseline_preds) if baseline_preds else 0,
+            }
+            baseline_file = output_path.with_name(
+                f"{output_path.stem}_baseline{output_path.suffix}"
+            )
+            save_results_json(baseline_metrics, baseline_file, config=baseline_config)
+            click.echo(f"💾 Baseline results saved to: {baseline_file}")
 
-        # Zip predictions and GTs together, then shuffle
-        examples = list(zip(gt_texts, preds))
+            # Save adapted
+            adapted_config = {
+                "base_model": base_model,
+                "adapter_path": adapter_path,
+                "baseline": False,
+                "manifest": manifest,
+                "batch_size": batch_size,
+                "max_samples": max_samples,
+                "source_lang": "en",
+                "target_lang": "es",
+                "num_samples": len(adapted_preds) if adapted_preds else 0,
+            }
+            adapted_file = output_path.with_name(
+                f"{output_path.stem}_adapted{output_path.suffix}"
+            )
+            save_results_json(adapted_metrics, adapted_file, config=adapted_config)
+            click.echo(f"💾 Adapted results saved to: {adapted_file}")
+        else:
+            # Single run
+            config = {
+                "base_model": base_model,
+                "adapter_path": adapter_path,
+                "baseline": False,
+                "manifest": manifest,
+                "batch_size": batch_size,
+                "max_samples": max_samples,
+                "source_lang": "en",
+                "target_lang": "es",
+                "num_samples": len(adapted_preds),
+            }
+            written = save_results_json(adapted_metrics, output_json, config=config)
+            click.echo(f"💾 Results saved to: {written}")
+
+    # Print Results
+    def print_metrics(label, metrics):
+        if metrics is None:
+            return
+        click.echo(f"\n--- {label} RESULTS ---")
+        click.echo(f" WER (Word Error Rate): {metrics['wer']:.4f}")
+        click.echo(f" SacreBLEU Score:       {metrics['bleu']:.4f}")
+        click.echo(f" chrF2++ Score:         {metrics['chrf2++']:.4f}")
+        click.echo(f" BERTScore F1:          {metrics['bertscore_f1']:.4f}")
+        click.echo(
+            f" BERTScore P / R:       {metrics['bertscore_precision']:.4f} / {metrics['bertscore_recall']:.4f}"
+        )
+
+    print_metrics("BASELINE", baseline_metrics)
+    print_metrics("ADAPTED", adapted_metrics)
+    click.echo("\n" + "=" * 40)
+
+    # Random Examples (for adapted model)
+    if print_examples > 0 and adapted_preds and len(adapted_preds) > 0:
+        click.echo(
+            f"🔍 Printing {min(print_examples, len(adapted_preds))} random examples (Adapted Model):\n"
+        )
+        examples = list(zip(gt_texts, adapted_preds))
         random.shuffle(examples)
-
         for i, (gt, pred) in enumerate(examples[:print_examples]):
             click.echo(f"--- Example {i + 1} ---")
             click.echo(f"GT:   {gt}")
             click.echo(f"Pred: {pred}\n")
 
-    click.echo("\n" + "=" * 40)
-    click.echo(" 📊 EVALUATION RESULTS")
-    click.echo("=" * 40)
-    click.echo(f" WER (Word Error Rate): {result['wer']:.4f}")
-    click.echo(f" SacreBLEU Score:       {result['bleu']:.4f}")
-    click.echo(f" chrF2++ Score:         {result['chrf2++']:.4f}")
-    click.echo(f" BERTScore F1:          {result['bertscore_f1']:.4f}")
-    click.echo(
-        f" BERTScore P / R:       {result['bertscore_precision']:.4f} / {result['bertscore_recall']:.4f}"
-    )
     click.echo("=" * 40 + "\n")
 
 
