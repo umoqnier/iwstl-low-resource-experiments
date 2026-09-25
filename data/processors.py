@@ -440,6 +440,7 @@ class AN4Processor(LanguageProcessor):
         do_ast: bool = True,
     ):
         super().__init__(name, out_dir, max_examples)
+        os.makedirs(out_dir, exist_ok=True)
         self.data_dir = Path(data_dir)
         self.do_ast = do_ast
 
@@ -578,6 +579,8 @@ class AN4Processor(LanguageProcessor):
     def _prepare_data(self):
         """Download, extract, and convert AN4 dataset if not present."""
         data_dir = self.data_dir
+        os.makedirs(data_dir, exist_ok=True)
+
         tar_path = data_dir / "an4_sphere.tar.gz"
 
         if not tar_path.exists():
