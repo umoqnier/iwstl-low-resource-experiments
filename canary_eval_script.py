@@ -2,6 +2,7 @@ import json
 import os
 import random
 import re
+from collections import Counter
 
 import click
 
@@ -25,33 +26,48 @@ def preprocess_text(text: str) -> str:
 
 
 def get_eval_data(manifest_path: str, max_samples: int = None):
-    """Loads audio paths and ground truth texts from the manifest."""
+    """Loads audio paths, ground truth texts and task labels from the manifest."""
     data = read_manifest(manifest_path)
     if max_samples is not None:
         data = data[:max_samples]
 
     file_paths = [x["audio_filepath"] for x in data]
     gt_texts = [x["text"] for x in data]
-    return file_paths, gt_texts
+    tasks = [x.get("task", "ast") for x in data]
+    return file_paths, gt_texts, tasks
 
 
 def run_predictions(
-    model, file_paths: list, batch_size: int, source_lang: str, target_lang: str
+    model,
+    file_paths: list,
+    tasks: list,
+    batch_size: int,
+    source_lang: str,
+    target_lang: str,
 ) -> list:
-    """Runs inference on the provided audio files."""
+    """Runs inference on the provided audio files, grouped by task.
+
+    The manifest can mix tasks (e.g. "asr" and "ast") but the model transcribes
+    one task at a time, so each task group is decoded separately and the
+    predictions are returned in the original sample order.
+    """
     if torch.cuda.is_available():
         model = model.cuda()
         model = model.to(torch.bfloat16)
 
-    preds = model.transcribe(
-        file_paths,
-        pnc="no",
-        task="ast",
-        source_lang=source_lang,
-        target_lang=target_lang,
-        batch_size=batch_size,
-    )
-    return [preprocess_text(p.text) for p in preds]
+    preds: list = [None] * len(file_paths)
+    for task in sorted(set(tasks)):
+        indices = [i for i, t in enumerate(tasks) if t == task]
+        task_file_paths = [file_paths[i] for i in indices]
+
+        kwargs = {"pnc": "no", "task": task, "source_lang": source_lang}
+        if task == "ast":
+            kwargs["target_lang"] = target_lang
+
+        task_preds = model.transcribe(task_file_paths, batch_size=batch_size, **kwargs)
+        for i, p in zip(indices, task_preds):
+            preds[i] = preprocess_text(p.text)
+    return preds
 
 
 def calculate_bertscore(
@@ -64,14 +80,31 @@ def calculate_bertscore(
     """Calculates BERTScore (Precision, Recall, F1).
 
     Defaults to xlm-roberta-large which is multilingual — good fit for
-    Spanish (es) targets. Pass device='cpu' to avoid OOM if Canary is on GPU.
+    Spanish (es) targets.
+
+    Pairs where the prediction or reference is empty are skipped: bert_score
+    cannot embed empty strings (it crashes with transformers>=5).
     """
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    pairs = [(p, g) for p, g in zip(predictions, gt_texts) if p.strip() and g.strip()]
+    n_skipped = len(predictions) - len(pairs)
+    if n_skipped > 0:
+        print(f"Warning: BERTScore skipped {n_skipped} empty prediction/reference(s).")
+
+    nan = float("nan")
+    if not pairs:
+        return {
+            "bertscore_precision": nan,
+            "bertscore_recall": nan,
+            "bertscore_f1": nan,
+            "bertscore_skipped_empty": n_skipped,
+        }
+
     P, R, F1 = bert_score_fn(
-        cands=predictions,
-        refs=gt_texts,
+        cands=[p for p, _ in pairs],
+        refs=[g for _, g in pairs],
         model_type=model_type,
         device=device,
         batch_size=batch_size,
@@ -82,11 +115,12 @@ def calculate_bertscore(
         "bertscore_precision": P.mean().item(),
         "bertscore_recall": R.mean().item(),
         "bertscore_f1": F1.mean().item(),
+        "bertscore_skipped_empty": n_skipped,
     }
 
 
 def eval_model(predictions: list, gt_texts: list) -> dict:
-    """Calculates WER and SacreBLEU scores."""
+    """Calculates WER, SacreBLEU, chrF2++ and BERTScore scores."""
     wer = word_error_rate(predictions, gt_texts)
 
     sacrebleu = SacreBLEUScore(n_gram=4)
@@ -108,10 +142,30 @@ def eval_model(predictions: list, gt_texts: list) -> dict:
     return {"wer": wer, "bleu": bleu_val, "chrf2++": chrf2pp_val, **bert_scores}
 
 
-def run_evaluation(model, file_paths, gt_texts, batch_size):
-    """Runs predictions and calculates metrics for a given model."""
-    preds = run_predictions(model, file_paths, batch_size, "en", "es")
-    metrics = eval_model(preds, gt_texts)
+def eval_model_by_task(predictions: list, gt_texts: list, tasks: list) -> dict:
+    """Calculates overall metrics and per-task metrics.
+
+    Returns a dict of the form:
+        {"overall": {...}, "by_task": {task: {..., "num_samples": n}}}
+    """
+    results = {"overall": eval_model(predictions, gt_texts), "by_task": {}}
+
+    for task in sorted(set(tasks)):
+        indices = [i for i, t in enumerate(tasks) if t == task]
+        task_preds = [predictions[i] for i in indices]
+        task_gt_texts = [gt_texts[i] for i in indices]
+        results["by_task"][task] = {
+            **eval_model(task_preds, task_gt_texts),
+            "num_samples": len(indices),
+        }
+
+    return results
+
+
+def run_evaluation(model, file_paths, gt_texts, tasks, batch_size):
+    """Runs predictions and calculates overall and per-task metrics."""
+    preds = run_predictions(model, file_paths, tasks, batch_size, "en", "es")
+    metrics = eval_model_by_task(preds, gt_texts, tasks)
     return metrics, preds
 
 
@@ -120,12 +174,17 @@ def save_results_json(
     output_path: str | Path,
     config: dict | None = None,
 ) -> Path:
-    """Saves evaluation results to a JSON file."""
+    """Saves evaluation results to a JSON file.
+
+    `results` is the dict returned by `eval_model_by_task`:
+    {"overall": {...}, "by_task": {task: {...}}}
+    """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
-        "metrics": results,
+        "metrics": results["overall"],
+        "metrics_by_task": results["by_task"],
         "config": config or {},
     }
 
@@ -199,7 +258,12 @@ def main(
 
     # Load Data
     click.echo(f"Loading evaluation data from: {manifest}...")
-    file_paths, gt_texts = get_eval_data(manifest, max_samples=max_samples)
+    file_paths, gt_texts, tasks = get_eval_data(manifest, max_samples=max_samples)
+    task_counts = Counter(tasks)
+    click.echo(
+        "Tasks in manifest: "
+        + ", ".join(f"{t} ({n})" for t, n in sorted(task_counts.items()))
+    )
 
     baseline_metrics = None
     baseline_preds = None
@@ -210,7 +274,7 @@ def main(
     if baseline:
         click.echo("\n--- Phase 1: Baseline Evaluation (Vanilla Model) ---")
         baseline_metrics, baseline_preds = run_evaluation(
-            model, file_paths, gt_texts, batch_size
+            model, file_paths, gt_texts, tasks, batch_size
         )
         click.echo("Baseline metrics calculated.")
 
@@ -231,7 +295,7 @@ def main(
         )
 
     adapted_metrics, adapted_preds = run_evaluation(
-        model, file_paths, gt_texts, batch_size
+        model, file_paths, gt_texts, tasks, batch_size
     )
     click.echo("Main evaluation metrics calculated.")
 
@@ -297,10 +361,7 @@ def main(
             click.echo(f"💾 Results saved to: {written}")
 
     # Print Results
-    def print_metrics(label, metrics):
-        if metrics is None:
-            return
-        click.echo(f"\n--- {label} RESULTS ---")
+    def print_metric_block(metrics):
         click.echo(f" WER (Word Error Rate): {metrics['wer']:.4f}")
         click.echo(f" SacreBLEU Score:       {metrics['bleu']:.4f}")
         click.echo(f" chrF2++ Score:         {metrics['chrf2++']:.4f}")
@@ -308,6 +369,19 @@ def main(
         click.echo(
             f" BERTScore P / R:       {metrics['bertscore_precision']:.4f} / {metrics['bertscore_recall']:.4f}"
         )
+        n_skipped = metrics.get("bertscore_skipped_empty", 0)
+        if n_skipped:
+            click.echo(f" BERTScore skipped:   {n_skipped} empty prediction(s)/ref(s)")
+
+    def print_metrics(label, results):
+        if results is None:
+            return
+        click.echo(f"\n--- {label} RESULTS (OVERALL) ---")
+        print_metric_block(results["overall"])
+        for task, metrics in results["by_task"].items():
+            n = metrics["num_samples"]
+            click.echo(f"\n--- {label} RESULTS (task: {task}, n={n}) ---")
+            print_metric_block(metrics)
 
     print_metrics("BASELINE", baseline_metrics)
     print_metrics("ADAPTED", adapted_metrics)
