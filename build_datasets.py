@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 
 import click
+from fsspec.utils import setup_logging
 from nemo.collections.asr.parts.utils.manifest_utils import write_manifest
 from rich.console import Console
 from rich.panel import Panel
@@ -16,11 +17,10 @@ from rich.table import Table
 
 from data.processors import MapugungunProcessor, NahuatlProcessor, QuechuaProcessor
 from utils.configs import MAPUCHE_ID, NAHUATL_PATH, QUECHUA_PATH
-from utils.logging_utils import get_logger
+from utils.logging_utils import get_logger, setup_logging
 
 # Initialize Rich console and logger
 console = Console()
-logger = get_logger(__name__)
 
 PROCESSOR_MAP = {
     "azz": {
@@ -63,8 +63,8 @@ PROCESSOR_MAP = {
     "--max-examples",
     "-m",
     type=int,
-    default=10,
-    help="Limit the number of examples per split for debugging.",
+    default=None,
+    help="Limit the number of examples per split for debugging. If not set, use the whole dataset.",
 )
 @click.option(
     "--language-mode",
@@ -79,6 +79,10 @@ def build(out, task, max_examples, language_mode, streaming):
     """
     Build datasets for Canary experiments.
     """
+    setup_logging(
+        log_file=f"logs/build_dataset_{language_mode}.log",
+    )
+    logger = get_logger(__name__)
     title = (
         "Multilingual Dataset Builder"
         if language_mode == "multi"

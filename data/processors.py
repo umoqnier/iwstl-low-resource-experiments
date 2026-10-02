@@ -274,7 +274,7 @@ class NahuatlProcessor(LanguageProcessor):
         if len(chunk_data.shape) > 1:
             chunk_data = chunk_data.mean(axis=1)
 
-        logger.info(f"Saving chunk {segment_id} for {audio_path.stem}")
+        logger.debug(f"Saving chunk {segment_id} for {audio_path.stem}")
         sf.write(chunk_path, chunk_data, samplerate)
         return chunk_path
 
