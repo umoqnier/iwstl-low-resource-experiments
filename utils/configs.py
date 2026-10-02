@@ -11,9 +11,13 @@ MAPUCHE_ID = "mengct00/Mapudungun_iwslt26"
 MAPUCHE_DATASET_PATH = DATASETS_PATH / Path("mapuche")
 NAHUATL_PATH = DATASETS_PATH / Path("nahuatl")
 # Audios with translation are Botanica only
-NAHUATL_AUDIOS_PATH = (
-    NAHUATL_PATH / Path("Sound-files-Puebla-Nahuatl") / Path("Botanica_579")
+NAHUATL_AUDIOS_PATH = NAHUATL_PATH / Path("Sound-files-Puebla-Nahuatl")
+NAHUATL_TRANSLATIONS_PATH = (
+    NAHUATL_PATH
+    / Path("Puebla-Nahuatl-Manifest")
+    / Path("ELAN-files-Final-proofed-and-most-translated")
 )
-NAHUATL_TRANSLATIONS_PATH = NAHUATL_PATH / Path("SpeechTranslationManifests")
-NAHUATL_TRANSCRIPTIONS_PATH = NAHUATL_PATH / Path("Puebla-Nahuatl-Manifest")
+NAHUATL_TRANSCRIPTIONS_PATH = (
+    NAHUATL_PATH / Path("Puebla-Nahuatl-Manifest") / Path("ELAN-files-First-draft-only")
+)
 SPLITS_RATIOS = {"train": 0.8, "test": 0.2, "validation": 0.1}

@@ -188,32 +188,64 @@ class NahuatlProcessor(LanguageProcessor):
         self.translations_path = NAHUATL_TRANSLATIONS_PATH
         self.transcription_path = NAHUATL_TRANSCRIPTIONS_PATH
         self.nahuatl_audios = NAHUATL_AUDIOS_PATH
-        self.chunks_dir = self.data_dir / Path("audio_chunks")
         self.seed = 42
         self.entries = []
 
-    def _load_segments(self) -> list[dict[str, Any]]:
-        """Parse every EAF file and return a flat list"""
-        eaf_files = set()
-        eaf_dirs = [f.name for f in self.translations_path.iterdir() if f.is_dir()]
-        for eaf_dir in eaf_dirs:
-            eaf_files.update((self.translations_path / Path(eaf_dir)).glob("*.eaf"))
-        logger.info(f"Found {len(eaf_files)} EAF files")
+    def _load_segments(self, task: str = "both") -> list[dict[str, Any]]:
+        """Parse EAF files based on the requested task.
 
+        Args:
+            task: One of 'ast', 'asr', or 'both'.
+                - 'ast': Only files with translations (ELAN-files-Final-proofed...)
+                - 'asr': Only transcription-only files (ELAN-files-First-draft-only)
+                - 'both': All available files
+        """
         segments = []
-        for eaf_path in tqdm.tqdm(sorted(eaf_files), desc=f"{self.name} parsing EAFs"):
-            try:
-                segments.extend(EAFParser(eaf_path).get_segments())
-            except Exception as e:
-                logger.error(f"Error processing {eaf_path}: {e}")
 
-        logger.info(f"Collected {len(segments)} segments in total")
+        if task in ["ast", "both"]:
+            # Load from translations folder (299 files with Spanish)
+            eaf_files = list(self.translations_path.rglob("*.eaf"))
+            logger.info(f"Found {len(eaf_files)} EAF files with translations")
+
+            for eaf_path in tqdm.tqdm(
+                eaf_files, desc=f"{self.name} parsing translated EAFs"
+            ):
+                try:
+                    parsed = EAFParser(eaf_path).get_segments_with_tag(
+                        has_translation=True
+                    )
+                    segments.extend(parsed)
+                except Exception as e:
+                    logger.error(f"Error processing {eaf_path}: {e}")
+
+        if task in ["asr", "both"]:
+            # Load from transcriptions folder (439 files, no translation)
+            eaf_files = list(self.transcription_path.rglob("*.eaf"))
+            logger.info(f"Found {len(eaf_files)} EAF files with transcriptions only")
+
+            for eaf_path in tqdm.tqdm(
+                eaf_files, desc=f"{self.name} parsing transcription-only EAFs"
+            ):
+                try:
+                    parsed = EAFParser(eaf_path).get_segments_with_tag(
+                        has_translation=False
+                    )
+                    segments.extend(parsed)
+                except Exception as e:
+                    logger.error(f"Error processing {eaf_path}: {e}")
+
+        logger.info(f"Collected {len(segments)} segments in total for task '{task}'")
         return segments
 
-    def cut_audio_chunk(self, audio_path: Path, segment: dict) -> Path | None:
+    def cut_audio_chunk(
+        self, audio_path: Path, segment: dict, task: str
+    ) -> Path | None:
+        # Save chunks into task-specific subdirectories
+        self.chunks_dir = self.data_dir / "audio_chunks" / task
         self.chunks_dir.mkdir(parents=True, exist_ok=True)
+
         segment_id = segment["start_ts"] + "_" + segment["end_ts"]
-        chunk_filename = f"{audio_path.stem}_{segment_id}.wav"
+        chunk_filename = f"{Path(audio_path).stem}_{segment_id}.wav"
         chunk_path = self.chunks_dir / chunk_filename
         if chunk_path.exists():
             logger.warning(f"chunk path {chunk_path} already exists. Skipping")
@@ -245,6 +277,25 @@ class NahuatlProcessor(LanguageProcessor):
         logger.info(f"Saving chunk {segment_id} for {audio_path.stem}")
         sf.write(chunk_path, chunk_data, samplerate)
         return chunk_path
+
+    def _find_audio_file(self, filename: str) -> Path | None:
+        """Search for an audio file by name under self.nahuatl_audios.
+
+        The EAF media paths are stale Windows paths that don't match the
+        actual directory layout on disk. We search recursively to find it.
+        """
+        if not filename:
+            return None
+        found = list(self.nahuatl_audios.rglob(filename))
+        if len(found) == 1:
+            return found[0]
+        if len(found) > 1:
+            logger.warning(
+                f"Duplicate audio file '{filename}' found at:\n"
+                + "\n".join(str(p) for p in found)
+            )
+            return found[0]  # pick first match
+        return None
 
     def make_splits(self, segments):
         if not segments:
@@ -293,42 +344,69 @@ class NahuatlProcessor(LanguageProcessor):
         assert len(all_files) == n, "Audio file leakage across splits!"
         return splits
 
-    def process(self) -> dict:
-        logger.info(f"Processing {self.name} from EAF files...")
-        segments = self._load_segments()
+    def process(self, task: str = "both") -> dict:
+        """Process Nahuatl dataset for the given task.
+
+        Args:
+            task: 'ast' (translation), 'asr' (transcription only), or 'both'
+        """
+        logger.info(f"Processing {self.name} for task '{task}' from EAF files...")
+        segments = self._load_segments(task=task)
 
         splits = self.make_splits(segments)
 
         entries = {name: [] for name in splits}
 
-        for split, segments in splits.items():
-            for seg in segments:
-                entries_count = len(entries[split])
-                if self.max_examples and entries_count >= self.max_examples:
+        for split, seg_list in splits.items():
+            for seg in seg_list:
+                # Apply max_examples limit per split
+                if self.max_examples and len(entries[split]) >= self.max_examples:
                     break
-
-                audio_path = self.nahuatl_audios / seg["audio_file"]
-                if not audio_path.exists():
-                    logger.warning(f"NAHUATL AUDIO PATH {audio_path} NOT FOUND")
-                    break
+                audio_path = self._find_audio_file(seg["audio_file"])
+                if audio_path is None:
+                    logger.warning(f"AUDIO FILE NOT FOUND: {seg['audio_file']}")
+                    continue
 
                 try:
-                    chunk_path = self.cut_audio_chunk(audio_path, seg)
+                    # Determine which task this segment belongs to based on has_translation flag
+                    segment_task = "ast" if seg.get("has_translation") else "asr"
+                    chunk_path = self.cut_audio_chunk(audio_path, seg, segment_task)
                 except Exception as e:
                     logger.error(f"Error chunking {seg['audio_file']}: {e}")
                     continue
 
-                entries[split].append(
-                    {
-                        "audio_filepath": str(chunk_path.absolute()),
-                        "duration": seg["duration"],
-                        "text": normalize_text(seg["translation"]),
-                        "transcription": seg["transcription"],
-                        "pnc": "No",
-                        "source_lang": "en",
-                        "target_lang": "es",
-                    }
-                )
+                # Build entry differently based on task
+                if seg.get("has_translation"):
+                    # For AST: use translation as target text
+                    entries[split].append(
+                        {
+                            "audio_filepath": str(chunk_path.absolute()),
+                            "duration": seg["duration"],
+                            "text": normalize_text(seg["translation"]),
+                            "transcription": seg["transcription"],
+                            "has_translation": True,
+                            "source_lang": "azz",
+                            "target_lang": "azz",
+                            "task": "asr",
+                            "pnc": "no",
+                        }
+                    )
+                else:
+                    # For ASR-only: use transcription as target text
+                    entries[split].append(
+                        {
+                            "audio_filepath": str(chunk_path.absolute()),
+                            "duration": seg["duration"],
+                            "text": normalize_text(seg["transcription"]),
+                            "transcription": seg["transcription"],
+                            "has_translation": False,
+                            "source_lang": "azz",
+                            "target_lang": "es",
+                            "task": "ast",
+                            "pnc": "no",
+                        }
+                    )
+
             hours = sum(e["duration"] for e in entries[split]) / 3600.0
             logger.info(
                 f"{self.name} {split}: {len(entries[split])} segments, {hours:.2f} hrs"
@@ -365,8 +443,16 @@ class EAFParser:
                     return os.path.basename(media_url)
         return None
 
-    def get_segments(self):
+    def get_segments_with_tag(self, has_translation: bool = True):
+        """Extract segments from the EAF file.
+
+        Args:
+            has_translation: If True, only return segments that have a translation tier.
+                           If False, only return segments without translation (for transcription-only datasets).
+        """
         transcriptions = {}
+
+        # First pass: extract transcription tiers
         for tier in self.root.findall("TIER"):
             ling_type_ref = tier.get("LINGUISTIC_TYPE_REF")
             if ling_type_ref in ["Transcripción", "UtteranceType"]:
@@ -393,6 +479,7 @@ class EAFParser:
                         "translation": None,
                     }
 
+        # Second pass: extract translation tiers if they exist
         for tier in self.root.findall("TIER"):
             if tier.get("LINGUISTIC_TYPE_REF") == "Traducción":
                 for ann in tier.findall(".//REF_ANNOTATION"):
@@ -405,7 +492,8 @@ class EAFParser:
                         )
                         transcriptions[ref_id]["translation"] = text_val
 
-        return [
+        # Filter based on has_translation flag
+        results = [
             {
                 "audio_file": self.media_file,
                 "start": seg["start"],
@@ -415,10 +503,19 @@ class EAFParser:
                 "duration": seg["end"] - seg["start"],
                 "transcription": seg["text"],
                 "translation": seg["translation"],
+                "has_translation": bool(
+                    seg.get("translation") and seg["translation"].strip()
+                ),
             }
             for seg in transcriptions.values()
-            if seg["translation"]
         ]
+
+        if has_translation:
+            # Return only segments that actually have translations
+            return [s for s in results if s["has_translation"]]
+        else:
+            # Return only segments without translations
+            return [s for s in results if not s["has_translation"]] or results
 
 
 class AN4Processor(LanguageProcessor):

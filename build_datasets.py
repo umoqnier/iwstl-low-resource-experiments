@@ -70,7 +70,7 @@ PROCESSOR_MAP = {
     "--language-mode",
     type=click.Choice(["map", "que", "azz", "multi"]),
     default="azz",
-    help="Language mode: 'azz' (Nahuatl), 'map', 'que', or 'multi' (all).",
+    help="Language mode: 'azz' (Nahuatl), 'map (Mapudungun)', 'que (Quechua)', or 'multi' (all).",
 )
 @click.option(
     "--streaming", is_flag=True, help="Enable streaming for HF datasets (prototyping)."
@@ -79,7 +79,6 @@ def build(out, task, max_examples, language_mode, streaming):
     """
     Build datasets for Canary experiments.
     """
-    # Dynamic Panel Title based on language mode
     title = (
         "Multilingual Dataset Builder"
         if language_mode == "multi"
@@ -108,12 +107,11 @@ def build(out, task, max_examples, language_mode, streaming):
             for lang_code in selected_langs:
                 config = PROCESSOR_MAP[lang_code]
 
+                os.makedirs(out / Path(language_mode), exist_ok=True)
                 manifest_paths = {
-                    "train": out / Path(config["name"]) / Path("train_manifest.json"),
-                    "validation": out
-                    / Path(config["name"])
-                    / Path("val_manifest.json"),
-                    "test": out / Path(config["name"]) / Path("test_manifest.json"),
+                    "train": out / Path(language_mode) / Path("train_manifest.json"),
+                    "validation": out / Path(language_mode) / Path("val_manifest.json"),
+                    "test": out / Path(language_mode) / Path("test_manifest.json"),
                 }
 
                 processor_args = {
