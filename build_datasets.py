@@ -55,9 +55,9 @@ PROCESSOR_MAP = {
 @click.option(
     "--task",
     "-t",
-    type=click.Choice(["asr", "ast", "both"], case_sensitive=False),
+    type=click.Choice(["asr", "ast", "multitask"], case_sensitive=False),
     default="ast",
-    help="Task type: 'asr' (transcriptions only), 'ast' (translations), or 'both'.",
+    help="Task type: 'asr' (transcriptions only), 'ast' (translations), or 'multitask'.",
 )
 @click.option(
     "--max-examples",
@@ -68,9 +68,9 @@ PROCESSOR_MAP = {
 )
 @click.option(
     "--language-mode",
-    type=click.Choice(["map", "que", "azz", "multi"]),
+    type=click.Choice(["map", "que", "azz", "multilang"]),
     default="azz",
-    help="Language mode: 'azz' (Nahuatl), 'map (Mapudungun)', 'que (Quechua)', or 'multi' (all).",
+    help="Language mode: 'azz' (Nahuatl), 'map (Mapudungun)', 'que (Quechua)', or 'multilang' (all).",
 )
 @click.option(
     "--streaming", is_flag=True, help="Enable streaming for HF datasets (prototyping)."
@@ -80,7 +80,7 @@ def build(out, task, max_examples, language_mode, streaming):
     Build datasets for Canary experiments.
     """
     setup_logging(
-        log_file=f"logs/build_dataset_{language_mode}.log",
+        log_file=f"logs/build_dataset_{language_mode}_{task}.log",
     )
     logger = get_logger(__name__)
     title = (
@@ -111,11 +111,20 @@ def build(out, task, max_examples, language_mode, streaming):
             for lang_code in selected_langs:
                 config = PROCESSOR_MAP[lang_code]
 
-                os.makedirs(out / Path(language_mode), exist_ok=True)
+                os.makedirs(out / Path(language_mode) / Path(task), exist_ok=True)
                 manifest_paths = {
-                    "train": out / Path(language_mode) / Path("train_manifest.json"),
-                    "validation": out / Path(language_mode) / Path("val_manifest.json"),
-                    "test": out / Path(language_mode) / Path("test_manifest.json"),
+                    "train": out
+                    / Path(language_mode)
+                    / Path(task)
+                    / Path("train_manifest.json"),
+                    "validation": out
+                    / Path(language_mode)
+                    / Path(task)
+                    / Path("val_manifest.json"),
+                    "test": out
+                    / Path(language_mode)
+                    / Path(task)
+                    / Path("test_manifest.json"),
                 }
 
                 processor_args = {

@@ -191,18 +191,18 @@ class NahuatlProcessor(LanguageProcessor):
         self.seed = 42
         self.entries = []
 
-    def _load_segments(self, task: str = "both") -> list[dict[str, Any]]:
+    def _load_segments(self, task: str = "multitask") -> list[dict[str, Any]]:
         """Parse EAF files based on the requested task.
 
         Args:
             task: One of 'ast', 'asr', or 'both'.
                 - 'ast': Only files with translations (ELAN-files-Final-proofed...)
                 - 'asr': Only transcription-only files (ELAN-files-First-draft-only)
-                - 'both': All available files
+                - 'multi': All available files
         """
         segments = []
 
-        if task in ["ast", "both"]:
+        if task in ["ast", "multitask"]:
             # Load from translations folder (299 files with Spanish)
             eaf_files = list(self.translations_path.rglob("*.eaf"))
             logger.info(f"Found {len(eaf_files)} EAF files with translations")
@@ -218,7 +218,7 @@ class NahuatlProcessor(LanguageProcessor):
                 except Exception as e:
                     logger.error(f"Error processing {eaf_path}: {e}")
 
-        if task in ["asr", "both"]:
+        if task in ["asr", "multitask"]:
             # Load from transcriptions folder (439 files, no translation)
             eaf_files = list(self.transcription_path.rglob("*.eaf"))
             logger.info(f"Found {len(eaf_files)} EAF files with transcriptions only")
@@ -344,11 +344,11 @@ class NahuatlProcessor(LanguageProcessor):
         assert len(all_files) == n, "Audio file leakage across splits!"
         return splits
 
-    def process(self, task: str = "both") -> dict:
+    def process(self, task: str = "multitask") -> dict:
         """Process Nahuatl dataset for the given task.
 
         Args:
-            task: 'ast' (translation), 'asr' (transcription only), or 'both'
+            task: 'ast' (translation), 'asr' (transcription only), or 'multi'
         """
         logger.info(f"Processing {self.name} for task '{task}' from EAF files...")
         segments = self._load_segments(task=task)
@@ -358,13 +358,19 @@ class NahuatlProcessor(LanguageProcessor):
         entries = {name: [] for name in splits}
 
         for split, seg_list in splits.items():
+            missing = set()
             for seg in seg_list:
                 # Apply max_examples limit per split
                 if self.max_examples and len(entries[split]) >= self.max_examples:
+                    logger.warning(
+                        f"Max examples set to {self.max_examples}. {split} reach that value."
+                    )
                     break
                 audio_path = self._find_audio_file(seg["audio_file"])
                 if audio_path is None:
-                    logger.warning(f"AUDIO FILE NOT FOUND: {seg['audio_file']}")
+                    if seg["audio_file"] not in missing:
+                        logger.warning(f"AUDIO FILE NOT FOUND: {seg['audio_file']}")
+                        missing.add(seg["audio_file"])
                     continue
 
                 try:
@@ -385,9 +391,9 @@ class NahuatlProcessor(LanguageProcessor):
                             "text": normalize_text(seg["translation"]),
                             "transcription": seg["transcription"],
                             "has_translation": True,
-                            "source_lang": "azz",
-                            "target_lang": "azz",
-                            "task": "asr",
+                            "source_lang": "en",
+                            "target_lang": "es",
+                            "task": segment_task,
                             "pnc": "no",
                         }
                     )
@@ -400,17 +406,13 @@ class NahuatlProcessor(LanguageProcessor):
                             "text": normalize_text(seg["transcription"]),
                             "transcription": seg["transcription"],
                             "has_translation": False,
-                            "source_lang": "azz",
+                            "source_lang": "es",
                             "target_lang": "es",
-                            "task": "ast",
+                            "task": segment_task,
                             "pnc": "no",
                         }
                     )
 
-            hours = sum(e["duration"] for e in entries[split]) / 3600.0
-            logger.info(
-                f"{self.name} {split}: {len(entries[split])} segments, {hours:.2f} hrs"
-            )
         return entries
 
 

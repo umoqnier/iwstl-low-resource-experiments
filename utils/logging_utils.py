@@ -1,9 +1,10 @@
-import sys
 import logging
 import os
+import sys
 from logging.handlers import RotatingFileHandler
 
 from huggingface_hub import utils as hf_utils
+from rich.logging import RichHandler
 
 import datasets
 
@@ -33,11 +34,13 @@ def setup_logging(
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    # Console handler: plain text, no ANSI. Goes to stderr so it survives
-    # stdout redirection without polluting the data stream.
-    console_handler = logging.StreamHandler(stream=sys.stderr)
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(level)
+    # Console handler: use RichHandler so it coordinates properly with
+    # Rich's Console / Progress (no spinner/log text fights).
+    console_handler = RichHandler(
+        console=None,  # uses Rich's default Console
+        rich_tracebacks=True,
+        level=level,
+    )
     root.addHandler(console_handler)
 
     if log_file is not None:
@@ -55,10 +58,11 @@ def setup_logging(
         file_handler.setLevel(level)
         root.addHandler(file_handler)
 
-    # Silence libraries that are genuinely noise.
+    # Suppress external library noise
     datasets.disable_progress_bars()
     datasets.utils.logging.set_verbosity_error()
     hf_utils.logging.set_verbosity_error()
+    logging.getLogger("OneLogger").setLevel(logging.WARNING)
 
     for name in (
         "httpx",
