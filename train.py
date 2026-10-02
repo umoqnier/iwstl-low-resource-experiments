@@ -17,12 +17,6 @@ from lightning.pytorch.loggers import TensorBoardLogger
 from nemo.collections.common.parts import LinearAdapterConfig
 
 from data.datamodule import CanaryMultilingualDataModule
-from data.processors import (
-    AN4Processor,
-    MapugungunProcessor,
-    NahuatlProcessor,
-    QuechuaProcessor,
-)
 from utils.configs import (
     CANARY_FLASH_MODEL_ID,
     CANARY_MODEL_ID,
@@ -43,42 +37,37 @@ from utils.logging_utils import get_logger, setup_logging
     default="azz",
 )
 @click.option(
+    "--task",
+    type=click.Choice(["asr", "ast", "multitask"]),
+    default="asr",
+    help="Task: asr (transcription), ast (translation), or multitask.",
+)
+@click.option(
     "--model-base", type=click.Choice([CANARY_FLASH_MODEL_ID, CANARY_MODEL_ID])
 )
 @click.option("--devices", type=int, default=1)
 @click.option("--batch-size", type=int, default=8)
 @click.option("--adapter-enc-dim", type=int, default=32)
 @click.option("--adapter-dec-dim", type=int, default=None)
-@click.option("--max-examples", type=int, default=None)
 @click.option("--max-epochs", type=int, default=50)
 @click.option("--num-data-workers", type=int, default=4)
-@click.option("--streaming/--no-streaming", default=True)
 @click.option("--models-dir", type=click.Path(), default=MODELS_PATH)
 @click.option("--manifests-dir", type=click.Path(), default=MANIFESTS_PATH)
-@click.option("--que-dataset-dir", type=click.Path(), default=QUECHUA_PATH)
-@click.option("--map-dataset-id", type=str, default=MAPUCHE_ID)
-@click.option("--azz-dataset-dir", type=click.Path(), default=NAHUATL_PATH)
-@click.option("--an4-data-dir", type=click.Path(), default=DATASETS_PATH / "an4")
 def main(
     language_mode,
+    task,
     model_base,
     devices,
     batch_size,
     adapter_enc_dim,
     adapter_dec_dim,
-    max_examples,
     max_epochs,
     num_data_workers,
-    streaming,
     models_dir,
     manifests_dir,
-    que_dataset_dir,
-    map_dataset_id,
-    azz_dataset_dir,
-    an4_data_dir,
 ):
     setup_logging(
-        log_file=f"logs/training_logs_{language_mode}.log",
+        log_file=f"logs/training_logs_{language_mode}_{task}.log",
         level=os.environ.get("LOG_LEVEL", "INFO"),
     )
     logger = get_logger(__name__)
@@ -102,27 +91,6 @@ def main(
                 free / 2**30,
                 total / 2**30,
             )
-
-    processors = []
-    if language_mode == "an4":
-        processors.append(
-            AN4Processor(
-                "an4", manifests_dir / language_mode, an4_data_dir, max_examples
-            )
-        )
-    elif language_mode in ["map", "multi"]:
-        processors.append(
-            MapugungunProcessor(
-                "map", manifests_dir, map_dataset_id, "spa", max_examples
-            )
-        )
-    if language_mode in ["que", "multi"]:
-        logger.warning("TODO: implement this :(")
-        return
-    if language_mode in ["azz", "multi"]:
-        processors.append(
-            NahuatlProcessor("azz", manifests_dir, azz_dataset_dir, max_examples)
-        )
 
     if model_base is None:
         model_base = (
@@ -156,19 +124,19 @@ def main(
     model.unfreeze_enabled_adapters()
 
     model.summarize()
-
+    logger.info(model.summarize())
+    # manifests_path = os.path.join(manifests_dir, language_mode, task)
     data_loader = CanaryMultilingualDataModule(
         tokenizer=model.tokenizer,
         prompt_formatter=model.prompt,
-        processors=processors,
+        language_mode=language_mode,
+        task=task,
+        manifests_dir=manifests_dir,
         num_workers=num_data_workers,
-        out_data_dir=manifests_dir,
-        streaming=streaming,
         batch_size=batch_size,
-        lang_mode=language_mode,
     )
 
-    # data_loader.prepare_data()
+    data_loader.setup()
 
     model.cfg.optim.lr = 3e-4
     model.cfg.optim.sched.warmup_steps = 25
@@ -178,7 +146,7 @@ def main(
     logger.info(
         f"Trainer: devices={devices}, strategy={strategy}, precision=bf16-mixed, accumulate_grad_batches=4, gradient_clip_val=1.0",
     )
-
+    tensor_board_file = f"canary_{language_mode}_{task}_enc_{adapter_enc_dim}_dec_{adapter_dec_dim if adapter_dec_dim else 'none'}"
     trainer = L.Trainer(
         devices=devices,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
@@ -189,12 +157,12 @@ def main(
         gradient_clip_val=1.0,
         logger=TensorBoardLogger(
             save_dir="logs",
-            name=f"canary_{language_mode}_enc_adap_{adapter_enc_dim}_dec_adap_{adapter_dec_dim}",
+            name=tensor_board_file,
         ),
         callbacks=[
             ModelCheckpoint(
                 dirpath=models_dir,
-                filename=f"canary_adapter_{language_mode}_{{epoch:02d}}",
+                filename=f"canary_adapter_{language_mode}_{task}_{{epoch:02d}}",
                 every_n_epochs=3,
                 save_top_k=10,
                 monitor="step",
@@ -219,7 +187,7 @@ def main(
     )
     final_model_path = os.path.join(
         models_dir,
-        f"canary_{language_mode}_enc_adap_{adapter_enc_dim}_dec_adap_{adapter_dec_dim}_final.pt",
+        f"canary_{language_mode}_{taks}_enc_{adapter_enc_dim}_dec_{adapter_dec_dim}_final.pt",
     )
     logger.info(f"FINISHED TRAINING. Saving final model at {final_model_path}")
     model.save_adapters(final_model_path)
