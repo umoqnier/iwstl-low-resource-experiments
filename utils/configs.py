@@ -18,7 +18,7 @@ NAHUATL_TRANSLATIONS_PATH = (
     / Path("ELAN-files-Final-proofed-and-most-translated")
 )
 NAHUATL_TRANSCRIPTIONS_PATH = (
-    NAHUATL_PATH / Path("Puebla-Nahuatl-Manifest") / Path("ELAN-files-First-draft-only")
+    NAHUATL_PATH / Path("Pueble-Nahuatl-Manifest") / Path("ELAN-files-First-draft-only")
 )
 SPLITS_RATIOS = {"train": 0.8, "test": 0.2, "validation": 0.1}
 
