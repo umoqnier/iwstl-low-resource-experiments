@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 
 import click
-from fsspec.utils import setup_logging
 from nemo.collections.asr.parts.utils.manifest_utils import write_manifest
 from rich.console import Console
 from rich.panel import Panel
@@ -16,7 +15,14 @@ from rich.progress import (
 from rich.table import Table
 
 from data.processors import MapugungunProcessor, NahuatlProcessor, QuechuaProcessor
-from utils.configs import MAPUCHE_ID, NAHUATL_PATH, QUECHUA_PATH
+from utils.configs import (
+    DATASET_DOWNLOAD_REGISTRY,
+    MAPUCHE_ID,
+    NAHUATL_PATH,
+    QUECHUA_PATH,
+)
+from utils.downloader import download_dataset
+from utils.extraction import extract_dataset
 from utils.logging_utils import get_logger, setup_logging
 
 # Initialize Rich console and logger
@@ -75,7 +81,13 @@ PROCESSOR_MAP = {
 @click.option(
     "--streaming", is_flag=True, help="Enable streaming for HF datasets (prototyping)."
 )
-def build(out, task, max_examples, language_mode, streaming):
+@click.option(
+    "--download",
+    "-d",
+    is_flag=True,
+    help="Download the dataset from the registry before building manifests.",
+)
+def build(out, task, max_examples, language_mode, streaming, download):
     """
     Build datasets for Canary experiments.
     """
@@ -98,7 +110,9 @@ def build(out, task, max_examples, language_mode, streaming):
     try:
         # 1. Determine which processors to run
         selected_langs = (
-            list(PROCESSOR_MAP.keys()) if language_mode == "multi" else [language_mode]
+            list(PROCESSOR_MAP.keys())
+            if language_mode == "multilang"
+            else [language_mode]
         )
 
         with Progress(
@@ -108,6 +122,20 @@ def build(out, task, max_examples, language_mode, streaming):
             TaskProgressColumn(),
             console=console,
         ) as progress:
+            # 0. Download and Extract datasets if flag is enabled
+            if download:
+                console.print("[bold blue]🌐 Downloading datasets...[/bold blue]")
+                for lang_code in selected_langs:
+                    download_dataset(lang_code, DATASET_DOWNLOAD_REGISTRY, progress)
+
+                console.print("[bold blue]📦 Extracting datasets...[/bold blue]")
+                for lang_code in selected_langs:
+                    extract_dataset(lang_code, DATASET_DOWNLOAD_REGISTRY, progress)
+
+                console.print(
+                    "[bold green]✅ Dataset preparation complete![/bold green]\n"
+                )
+
             for lang_code in selected_langs:
                 config = PROCESSOR_MAP[lang_code]
 
