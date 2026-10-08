@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import (
     BarColumn,
+    DownloadColumn,
     Progress,
     SpinnerColumn,
     TaskProgressColumn,
@@ -119,6 +120,7 @@ def build(out, task, max_examples, language_mode, streaming, download):
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
+            DownloadColumn(),
             TaskProgressColumn(),
             console=console,
         ) as progress:
