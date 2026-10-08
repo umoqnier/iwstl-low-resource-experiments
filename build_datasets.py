@@ -21,6 +21,7 @@ from utils.configs import (
     MAPUCHE_ID,
     NAHUATL_PATH,
     QUECHUA_PATH,
+    SPLITS_RATIOS,
 )
 from utils.downloader import download_dataset
 from utils.extraction import extract_dataset
@@ -160,7 +161,6 @@ def build(out, task, max_examples, language_mode, streaming, download):
                 processor_args = {
                     "name": config["name"],
                     "out_dir": Path(out) / Path(config["out_manifests_subdir"]),
-                    "max_examples": max_examples,
                     **config["kwargs"],
                 }
 
@@ -175,6 +175,21 @@ def build(out, task, max_examples, language_mode, streaming, download):
                     description=f"Building {config['name']}...", total=None
                 )
                 lang_entries = processor.process(task=task)
+
+                # Proportional sampling if max_examples is set
+                if max_examples:
+                    logger.info(
+                        f"Applying proportional sampling (total budget: {max_examples})"
+                    )
+                    for split, ratio in SPLITS_RATIOS.items():
+                        # Map config split names to processor split names
+                        split_key = "validation" if split == "validation" else split
+                        if split_key in lang_entries:
+                            limit = int(max_examples * ratio)
+                            lang_entries[split_key] = lang_entries[split_key][:limit]
+                            logger.info(
+                                f"  {split}: {len(lang_entries[split_key])} samples"
+                            )
 
                 logger.info(f"Writing manifest for {config['name']}")
 
