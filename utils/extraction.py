@@ -30,7 +30,7 @@ def extract_dataset(lang_code: str, registry: dict, progress: Progress):
     dest_dir = Path(config["dest_dir"])
 
     # 1. Find all files in the destination directory
-    all_files = list(dest_dir.glob("*"))
+    all_files = [f for f in dest_dir.glob("*") if f.is_file()]
 
     # 2. Identify multipart archives by looking for .part00, .part01, etc.
     # We group files that share the same base name before the .partXX suffix
@@ -40,9 +40,12 @@ def extract_dataset(lang_code: str, registry: dict, progress: Progress):
             base_name = file.name.split(".tgz.part")[0] + ".tgz"
             multipart_groups.setdefault(base_name, []).append(file)
 
-    # 3. Concatenate and extract multipart archives
+    # 3. Concatenate and extract multipart archives.
+    # The combined archive is written to a unique temp name so it can never
+    # collide with a standalone archive of the same base name (which may still
+    # exist on disk as a leftover from a previously failed run).
     for base_filename, parts in multipart_groups.items():
-        combined_tgz = dest_dir / base_filename
+        combined_tgz = dest_dir / (base_filename + ".combining.tmp")
         task_id = progress.add_task(
             description=f"Processing multipart {base_filename}...", total=None
         )
@@ -63,16 +66,22 @@ def extract_dataset(lang_code: str, registry: dict, progress: Progress):
                             outfile.write(chunk)
 
             extract_tgz(combined_tgz, dest_dir, progress, task_id)
-            combined_tgz.unlink()
         finally:
+            # Always remove the large temp archive, even on failure, to free space
+            if combined_tgz.exists():
+                combined_tgz.unlink()
             progress.remove_task(task_id)
 
-    # 4. Extract any other standalone archives (that aren't parts)
+    # 4. Extract standalone archives (not parts, and not the base of a
+    # multipart group - a combined archive with that name would be redundant
+    # and potentially a corrupted leftover from an interrupted run).
     for file in all_files:
-        # Check for .tgz or .tar.gz extension
+        is_archive = file.name.endswith(".tgz") or file.name.endswith(".tar.gz")
         if (
-            file.name.endswith(".tgz") or file.name.endswith(".tar.gz")
-        ) and ".part" not in file.name:
+            is_archive
+            and ".part" not in file.name
+            and file.name not in multipart_groups
+        ):
             task_id = progress.add_task(
                 description=f"Extracting {file.name}...", total=None
             )

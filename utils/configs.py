@@ -14,7 +14,7 @@ NAHUATL_PATH = DATASETS_PATH / Path("nahuatl")
 NAHUATL_AUDIOS_PATH = NAHUATL_PATH / Path("Sound-files-Puebla-Nahuatl")
 NAHUATL_TRANSLATIONS_PATH = (
     NAHUATL_PATH
-    / Path("Puebla-Nahuatl-Manifest")
+    / Path("Pueble-Nahuatl-Manifest")
     / Path("ELAN-files-Final-proofed-and-most-translated")
 )
 NAHUATL_TRANSCRIPTIONS_PATH = (
