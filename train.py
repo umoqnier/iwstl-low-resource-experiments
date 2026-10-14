@@ -49,7 +49,8 @@ from utils.logging_utils import get_logger, setup_logging
 @click.option("--batch-size", type=int, default=8)
 @click.option("--adapter-enc-dim", type=int, default=32)
 @click.option("--adapter-dec-dim", type=int, default=None)
-@click.option("--max-epochs", type=int, default=50)
+@click.option("--max-steps", type=int, default=1000)
+@click.option("--val-check-interval", type=int, default=100)
 @click.option("--num-data-workers", type=int, default=4)
 @click.option("--models-dir", type=click.Path(), default=MODELS_PATH)
 @click.option("--manifests-dir", type=click.Path(), default=MANIFESTS_PATH)
@@ -61,7 +62,8 @@ def main(
     batch_size,
     adapter_enc_dim,
     adapter_dec_dim,
-    max_epochs,
+    max_steps,
+    val_check_interval,
     num_data_workers,
     models_dir,
     manifests_dir,
@@ -138,8 +140,10 @@ def main(
 
     data_loader.setup()
 
-    model.cfg.optim.lr = 3e-4
-    model.cfg.optim.sched.warmup_steps = 25
+    # Adapter-only training converges fast; use a higher LR than full-model fine-tuning.
+    model.cfg.optim.lr = 1e-3
+    model.cfg.optim.sched.max_steps = max_steps
+    model.cfg.optim.sched.warmup_steps = int(max_steps * 0.05)  # 5% warmup
     os.makedirs(models_dir, exist_ok=True)
 
     strategy = "ddp" if devices > 1 else "auto"
@@ -151,7 +155,8 @@ def main(
         devices=devices,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         strategy=strategy,
-        max_epochs=max_epochs,
+        max_steps=max_steps,
+        val_check_interval=val_check_interval,
         precision="bf16-mixed",
         accumulate_grad_batches=4,
         gradient_clip_val=1.0,
@@ -162,14 +167,14 @@ def main(
         callbacks=[
             ModelCheckpoint(
                 dirpath=models_dir,
-                filename=f"canary_adapter_{language_mode}_{task}_{{epoch:02d}}",
-                every_n_epochs=3,
-                save_top_k=10,
-                monitor="step",
-                mode="max",
+                filename=f"canary_adapter_{language_mode}_{task}_{{step:06d}}",
+                every_n_train_steps=val_check_interval,
+                save_top_k=5,
+                monitor="val_wer",
+                mode="min",
                 save_last=True,
             ),
-            EarlyStopping(monitor="val_loss", patience=5, mode="min"),
+            EarlyStopping(monitor="val_wer", patience=3, mode="min"),
             LearningRateMonitor(logging_interval="step"),
         ],
         use_distributed_sampler=False,
@@ -187,7 +192,7 @@ def main(
     )
     final_model_path = os.path.join(
         models_dir,
-        f"canary_{language_mode}_{taks}_enc_{adapter_enc_dim}_dec_{adapter_dec_dim}_final.pt",
+        f"canary_{language_mode}_{task}_enc_{adapter_enc_dim}_dec_{adapter_dec_dim}_final.pt",
     )
     logger.info(f"FINISHED TRAINING. Saving final model at {final_model_path}")
     model.save_adapters(final_model_path)
