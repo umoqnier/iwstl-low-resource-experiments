@@ -1,6 +1,5 @@
 import logging
 import os
-import sys
 from logging.handlers import RotatingFileHandler
 
 from huggingface_hub import utils as hf_utils
@@ -57,6 +56,8 @@ def setup_logging(
         file_handler.setFormatter(formatter)
         file_handler.setLevel(level)
         root.addHandler(file_handler)
+        # Add nemo logger
+        logging.getLogger("nemo_logger").addHandler(file_handler)
 
     # Suppress external library noise
     datasets.disable_progress_bars()
