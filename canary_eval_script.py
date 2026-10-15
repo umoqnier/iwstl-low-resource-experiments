@@ -12,11 +12,11 @@ os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 from pathlib import Path
 
 import nemo.collections.asr as nemo_asr
+import sacrebleu
 import torch
 from bert_score import score as bert_score_fn
 from nemo.collections.asr.metrics.wer import word_error_rate
 from nemo.collections.asr.parts.utils.manifest_utils import read_manifest
-from torchmetrics.text import CHRFScore, SacreBLEUScore
 
 
 def preprocess_text(text: str) -> str:
@@ -123,18 +123,14 @@ def eval_model(predictions: list, gt_texts: list) -> dict:
     """Calculates WER, SacreBLEU, chrF2++ and BERTScore scores."""
     wer = word_error_rate(predictions, gt_texts)
 
-    sacrebleu = SacreBLEUScore(n_gram=4)
-    # Torchmetrics SacreBLEU expects target to be a sequence of sequences of strings
-    formatted_gt = [[gt] for gt in gt_texts]
-    sacrebleu.update(predictions, formatted_gt)
-    bleu = sacrebleu.compute()
-    # Extract tensor value if it's a tensor
-    bleu_val = bleu.item() if hasattr(bleu, "item") else bleu
+    # sacrebleu reports the conventional 0-100 scale (old results files hold
+    # torchmetrics 0-1 fractions, i.e. these values divided by 100)
+    bleu_val = sacrebleu.corpus_bleu(predictions, [gt_texts], tokenize="13a").score
 
     # chrF2++
-    chrf2pp = CHRFScore(n_char_order=6, n_word_order=2, beta=2)
-    chrf2pp.update(predictions, formatted_gt)
-    chrf2pp_val = chrf2pp.compute().item()
+    chrf2pp_val = sacrebleu.corpus_chrf(
+        predictions, [gt_texts], char_order=6, word_order=2, beta=2
+    ).score
 
     # Bertscore
     bert_scores = calculate_bertscore(predictions, gt_texts)
