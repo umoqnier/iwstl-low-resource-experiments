@@ -1,29 +1,29 @@
 {
   "metrics": {
     "wer": 0.5971594577146546,
-    "bleu": 0.4066574275493622,
-    "chrf2++": 0.4888668656349182,
-    "bertscore_precision": 0.9060870409011841,
-    "bertscore_recall": 0.8953096270561218,
+    "bleu": 40.66574644925786,
+    "chrf2++": 43.536717005803936,
+    "bertscore_precision": 0.9060869812965393,
+    "bertscore_recall": 0.895309567451477,
     "bertscore_f1": 0.9004669785499573,
     "bertscore_skipped_empty": 0
   },
   "metrics_by_task": {
     "asr": {
       "wer": 0.4463130659767141,
-      "bleu": 0.5283056497573853,
-      "chrf2++": 0.692413866519928,
+      "bleu": 52.830567684770564,
+      "chrf2++": 61.042365787044076,
       "bertscore_precision": 0.9316969513893127,
-      "bertscore_recall": 0.9196506142616272,
+      "bertscore_recall": 0.9196504950523376,
       "bertscore_f1": 0.9254977703094482,
       "bertscore_skipped_empty": 0,
       "num_samples": 130
     },
     "ast": {
       "wer": 0.7474226804123711,
-      "bleu": 0.28853821754455566,
-      "chrf2++": 0.2832801342010498,
-      "bertscore_precision": 0.8804771900177002,
+      "bleu": 28.85382328681169,
+      "chrf2++": 25.514609189608063,
+      "bertscore_precision": 0.8804770708084106,
       "bertscore_recall": 0.8709688186645508,
       "bertscore_f1": 0.8754361867904663,
       "bertscore_skipped_empty": 0,
@@ -34,7 +34,7 @@
     "base_model": "nvidia/canary-1b-v2",
     "adapter_path": null,
     "baseline": true,
-    "manifest": "manifests/test_manifest.json",
+    "manifest": "manifests/an4/multitask/test_manifest.json",
     "batch_size": 16,
     "max_samples": null,
     "source_lang": "en",

@@ -1,13 +1,15 @@
 import os
 import re
+
 import click
 
 # Force PyTorch to allow full object loading (Must be before torch imports)
 os.environ["TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD"] = "1"
 
 import random
-import torch
+
 import nemo.collections.asr as nemo_asr
+import torch
 from nemo.collections.asr.parts.utils.manifest_utils import read_manifest
 
 OUTPUT_PATH_FMT = "krusty_crab.st.constrained.{LABEL}.arn-spa.txt"
@@ -130,6 +132,7 @@ def main(
         for i, pred in enumerate(preds[:print_examples]):
             click.echo(f"--- Example {i + 1} ---")
             click.echo(f"Pred: {pred}\n")
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,44 @@
+{
+  "metrics": {
+    "wer": 0.26404131697869593,
+    "bleu": 76.25240411278774,
+    "chrf2++": 67.07942978701908,
+    "bertscore_precision": 0.9617787003517151,
+    "bertscore_recall": 0.9633450508117676,
+    "bertscore_f1": 0.9624776244163513,
+    "bertscore_skipped_empty": 3
+  },
+  "metrics_by_task": {
+    "asr": {
+      "wer": 0.00646830530401035,
+      "bleu": 98.62773366814585,
+      "chrf2++": 99.05060671844159,
+      "bertscore_precision": 0.9988545179367065,
+      "bertscore_recall": 0.9991064071655273,
+      "bertscore_f1": 0.9989795684814453,
+      "bertscore_skipped_empty": 0,
+      "num_samples": 130
+    },
+    "ast": {
+      "wer": 0.520618556701031,
+      "bleu": 54.573254147997396,
+      "chrf2++": 34.57948058318617,
+      "bertscore_precision": 0.9238271117210388,
+      "bertscore_recall": 0.9267390370368958,
+      "bertscore_f1": 0.9251134395599365,
+      "bertscore_skipped_empty": 3,
+      "num_samples": 130
+    }
+  },
+  "config": {
+    "base_model": "nvidia/canary-1b-v2",
+    "adapter_path": "models/canary_an4_multitask_enc_8_dec_8_final.pt",
+    "baseline": false,
+    "manifest": "manifests/an4/multitask/test_manifest.json",
+    "batch_size": 16,
+    "max_samples": null,
+    "source_lang": "en",
+    "target_lang": "es",
+    "num_samples": 260
+  }
+}
