@@ -139,18 +139,17 @@ def eval_model(predictions: list, gt_texts: list) -> dict:
 
 
 def eval_model_by_task(predictions: list, gt_texts: list, tasks: list) -> dict:
-    """Calculates overall metrics and per-task metrics.
+    """Calculates metrics per task (no aggregate).
 
-    Returns a dict of the form:
-        {"overall": {...}, "by_task": {task: {..., "num_samples": n}}}
+    Returns a dict of the form: {task: {..., "num_samples": n}}
     """
-    results = {"overall": eval_model(predictions, gt_texts), "by_task": {}}
+    results = {}
 
     for task in sorted(set(tasks)):
         indices = [i for i, t in enumerate(tasks) if t == task]
         task_preds = [predictions[i] for i in indices]
         task_gt_texts = [gt_texts[i] for i in indices]
-        results["by_task"][task] = {
+        results[task] = {
             **eval_model(task_preds, task_gt_texts),
             "num_samples": len(indices),
         }
@@ -158,9 +157,27 @@ def eval_model_by_task(predictions: list, gt_texts: list, tasks: list) -> dict:
     return results
 
 
-def run_evaluation(model, file_paths, gt_texts, tasks, batch_size):
-    """Runs predictions and calculates overall and per-task metrics."""
-    preds = run_predictions(model, file_paths, tasks, batch_size, "en", "es")
+def run_evaluation(model, file_paths, gt_texts, tasks, batch_size, pred_path=None):
+    """Runs predictions (or reuses cached ones) and calculates per-task metrics.
+
+    If `pred_path` exists, transcriptions are loaded from it instead of being
+    regenerated; otherwise they are computed and saved there.
+    """
+    if pred_path and Path(pred_path).exists():
+        click.echo(f"Reusing cached transcriptions from: {pred_path}")
+        preds = json.loads(Path(pred_path).read_text(encoding="utf-8"))
+        assert len(preds) == len(gt_texts), (
+            f"Cached predictions count ({len(preds)}) != samples ({len(gt_texts)})"
+        )
+    else:
+        preds = run_predictions(model, file_paths, tasks, batch_size, "en", "es")
+        if pred_path:
+            Path(pred_path).parent.mkdir(parents=True, exist_ok=True)
+            Path(pred_path).write_text(
+                json.dumps(preds, indent=2, ensure_ascii=False), encoding="utf-8"
+            )
+            click.echo(f"💾 Transcriptions saved to: {pred_path}")
+
     metrics = eval_model_by_task(preds, gt_texts, tasks)
     return metrics, preds
 
@@ -172,15 +189,13 @@ def save_results_json(
 ) -> Path:
     """Saves evaluation results to a JSON file.
 
-    `results` is the dict returned by `eval_model_by_task`:
-    {"overall": {...}, "by_task": {task: {...}}}
+    `results` is the dict returned by `eval_model_by_task`: {task: {...}}
     """
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     payload = {
-        "metrics": results["overall"],
-        "metrics_by_task": results["by_task"],
+        "metrics_by_task": results,
         "config": config or {},
     }
 
@@ -236,6 +251,14 @@ def save_results_json(
     default=False,
     help="Indicate if this run is for calculating baseline metrics from vanilla model.",
 )
+@click.option(
+    "--predictions-path",
+    type=click.Path(),
+    default=None,
+    help="Path to cache transcriptions as JSON. If it exists, transcriptions are loaded from it "
+    "instead of regenerated; otherwise they are saved there. "
+    "Defaults to <output-json stem>_predictions.json when --output-json is given.",
+)
 def main(
     manifest,
     adapter_path,
@@ -245,6 +268,7 @@ def main(
     print_examples,
     output_json,
     baseline,
+    predictions_path,
 ):
     """Evaluates a Canary AST model with or without adapters."""
 
@@ -261,6 +285,20 @@ def main(
         + ", ".join(f"{t} ({n})" for t, n in sorted(task_counts.items()))
     )
 
+    # Cache path for transcriptions (baseline gets its own sibling file)
+    if predictions_path:
+        adapted_pred_path = Path(predictions_path)
+    elif output_json:
+        out = Path(output_json)
+        adapted_pred_path = out.with_name(f"{out.stem}_predictions{out.suffix}")
+    else:
+        adapted_pred_path = None
+    baseline_pred_path = None
+    if baseline and adapted_pred_path:
+        baseline_pred_path = adapted_pred_path.with_name(
+            f"{adapted_pred_path.stem}_baseline{adapted_pred_path.suffix}"
+        )
+
     baseline_metrics = None
     baseline_preds = None
     adapted_metrics = None
@@ -270,7 +308,7 @@ def main(
     if baseline:
         click.echo("\n--- Phase 1: Baseline Evaluation (Vanilla Model) ---")
         baseline_metrics, baseline_preds = run_evaluation(
-            model, file_paths, gt_texts, tasks, batch_size
+            model, file_paths, gt_texts, tasks, batch_size, baseline_pred_path
         )
         click.echo("Baseline metrics calculated.")
 
@@ -291,7 +329,7 @@ def main(
         )
 
     adapted_metrics, adapted_preds = run_evaluation(
-        model, file_paths, gt_texts, tasks, batch_size
+        model, file_paths, gt_texts, tasks, batch_size, adapted_pred_path
     )
     click.echo("Main evaluation metrics calculated.")
 
@@ -372,9 +410,7 @@ def main(
     def print_metrics(label, results):
         if results is None:
             return
-        click.echo(f"\n--- {label} RESULTS (OVERALL) ---")
-        print_metric_block(results["overall"])
-        for task, metrics in results["by_task"].items():
+        for task, metrics in results.items():
             n = metrics["num_samples"]
             click.echo(f"\n--- {label} RESULTS (task: {task}, n={n}) ---")
             print_metric_block(metrics)
