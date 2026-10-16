@@ -60,6 +60,20 @@ For multilingual training (Mapudungun and Quechua):
 python canary_script.py --language-mode multi --batch-size 4 --max-epochs 100
 ```
 
+### GPU memory & batching decision
+
+`train.py` batches training by **audio seconds** (`--batch-duration`, Lhotse `batch_duration` + `quadratic_duration`, following the Canary AED recipe) instead of a fixed number of utterances. `--batch-size` now only governs validation/test.
+
+Why: with PEFT adapters, the frozen base saves optimizer/gradient state but **not activation memory**, which scales with the total seconds of audio per batch. A fixed `batch_size` caps the *number* of cuts, so a batch drawn from a 30-40 s bucket costs ~8x more memory than one from the 5 s bucket: nondeterministic OOMs on small GPUs as bucketing reaches long utterances, and wasted headroom on bigger ones. A duration budget gives a constant peak-memory profile across buckets and a single portable knob per machine (it applies per rank under DDP, so dual-GPU doubles the effective batch for free). Starting points, verify against the free-memory log `train.py` prints:
+
+| Env | `--batch-duration` |
+|---|---|
+| 1x 12 GB (`canary-1b-flash`) | 45-60 |
+| 1x 24 GB | 120-180 |
+| 2x GPU (DDP) | same as single; effective batch x2 |
+
+Validation/test keep a static `batch_size` with bucketing disabled (NeMo recipe convention: avoids rank-count imbalance during DDP validation). Their `max_duration` was raised from 15 s to 40 s to match training, so long utterances (e.g. Nahuatl Botanica AST segments) are no longer silently dropped from `val_wer`, the checkpoint/EarlyStopping monitor.
+
 ### Manifest Preprocessing
 
 To clean a manifest file and filter long audios:
