@@ -248,7 +248,7 @@ class NahuatlProcessor(LanguageProcessor):
         chunk_filename = f"{Path(audio_path).stem}_{segment_id}.wav"
         chunk_path = self.chunks_dir / chunk_filename
         if chunk_path.exists():
-            logger.warning(f"chunk path {chunk_path} already exists. Skipping")
+            logger.debug(f"chunk path {chunk_path} already exists. Skipping")
             return chunk_path
 
         start_chunk = segment["start"]
@@ -600,7 +600,7 @@ class AN4Processor(LanguageProcessor):
 
     # ── public API ───────────────────────────────────────────
 
-    def process(self):
+    def process(self, task: str = "multitask") -> dict:
         """
         Build ASR + AST manifests from AN4 transcription files and return a dict
         mapping split names → list of manifest entries, identical in structure to
@@ -608,6 +608,7 @@ class AN4Processor(LanguageProcessor):
 
             {"train": [...], "validation": [], "test": [...]}
         """
+        self.do_ast = task in ("ast", "multitask")
         self._prepare_data()
 
         # ── 1. read base ASR manifests ───────────────────────
@@ -669,6 +670,10 @@ class AN4Processor(LanguageProcessor):
 
         # Return dict in the same shape as other processors:
         # {"train": ..., "validation": ..., "test": ...}
+        if task == "asr":
+            return {"train": train_entries, "validation": [], "test": test_entries}
+        if task == "ast":
+            return {"train": ast_train, "validation": [], "test": ast_test}
         return {
             "train": combined_train,
             "validation": combined_val,

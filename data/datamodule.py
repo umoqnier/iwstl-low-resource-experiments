@@ -34,6 +34,7 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         manifests_dir: str = "./manifests/",
         batch_size: int = 8,
         num_workers: int = 4,
+        batch_duration: float = 60.0,
     ):
         super().__init__()
         self.tokenizer = tokenizer
@@ -43,6 +44,9 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         self.task = task
         self.batch_size = batch_size
         self.num_workers = num_workers
+        # Seconds of audio per GPU batch during training: the per-env memory knob
+        # (12GB ~45-60, 24GB ~120-180). Under DDP it applies per rank.
+        self.batch_duration = batch_duration
 
     @property
     def manifests(self):
@@ -69,7 +73,11 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         cfg = {
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["train"],
-            "batch_size": self.batch_size,
+            # Duration-budget batching (matches the Canary AED recipe): bounds
+            # activation memory per bucket instead of capping cut count.
+            "batch_size": None,
+            "batch_duration": self.batch_duration,
+            "quadratic_duration": 15,
             "max_duration": 40.0,
             "min_duration": 0.1,
             "num_workers": self.num_workers,
@@ -79,12 +87,16 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
         return self._setup_dataloader(cfg)
 
     def val_dataloader(self):
-        world_size = self.trainer.world_size if self.trainer else 1
         cfg = {
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["validation"],
             "batch_size": self.batch_size,
-            "max_duration": 15.0,
+            # Static batches for val (NeMo recipe convention). bucket_duration_bins
+            # must be nulled or the dataloader auto-re-enables bucketing.
+            "use_bucketing": False,
+            "bucket_duration_bins": None,
+            # Match train so long utterances are not silently dropped from val_wer.
+            "max_duration": 40.0,
             "min_duration": 0.1,
             "num_workers": self.num_workers,
             "shuffle": False,
@@ -97,7 +109,9 @@ class CanaryMultilingualDataModule(L.LightningDataModule):
             **_LHOTSE_BASE,
             "manifest_filepath": self.manifests["test"],
             "batch_size": self.batch_size,
-            "max_duration": 15.0,
+            "use_bucketing": False,
+            "bucket_duration_bins": None,
+            "max_duration": 40.0,
             "min_duration": 0.1,
             "num_workers": 1,
             "shuffle": False,

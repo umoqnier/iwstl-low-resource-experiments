@@ -15,8 +15,14 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from data.processors import MapugungunProcessor, NahuatlProcessor, QuechuaProcessor
+from data.processors import (
+    AN4Processor,
+    MapugungunProcessor,
+    NahuatlProcessor,
+    QuechuaProcessor,
+)
 from utils.configs import (
+    AN4_PATH,
     DATASET_DOWNLOAD_REGISTRY,
     MAPUCHE_ID,
     NAHUATL_PATH,
@@ -49,6 +55,12 @@ PROCESSOR_MAP = {
         "out_manifests_subdir": "quechua",
         "kwargs": {"data_dir": QUECHUA_PATH, "split_mapping": {}},  # Add mapping here
     },
+    "an4": {
+        "class": AN4Processor,
+        "name": "AN4",
+        "out_manifests_subdir": "an4",
+        "kwargs": {"data_dir": AN4_PATH},
+    },
 }
 
 
@@ -76,9 +88,9 @@ PROCESSOR_MAP = {
 )
 @click.option(
     "--language-mode",
-    type=click.Choice(["map", "que", "azz", "multilang"]),
+    type=click.Choice(["map", "que", "azz", "an4", "multilang"]),
     default="azz",
-    help="Language mode: 'azz' (Nahuatl), 'map (Mapudungun)', 'que (Quechua)', or 'multilang' (all).",
+    help="Language mode: 'azz' (Nahuatl), 'map (Mapudungun)', 'que (Quechua)', 'en' (AN4), or 'multilang' (all).",
 )
 @click.option(
     "--streaming", is_flag=True, help="Enable streaming for HF datasets (prototyping)."
@@ -199,8 +211,9 @@ def build(out, task, max_examples, language_mode, streaming, download):
                         f"\n[bold green]✅ Success![/bold green] Manifests written to [bold]{path}[/bold]"
                     )
 
-                display_summary(lang_entries)
-
+                summary = build_summary(lang_entries)
+                console.print(summary)
+                logger.info(str(summary))
                 progress.remove_task(progress_task)
 
     except Exception as e:
@@ -209,7 +222,7 @@ def build(out, task, max_examples, language_mode, streaming, download):
         raise click.Abort()
 
 
-def display_summary(entries):
+def build_summary(entries):
     """Displays a Rich table with the stats of the built dataset."""
     table = Table(
         title="Dataset Summary", show_header=True, header_style="bold magenta"
@@ -223,7 +236,7 @@ def display_summary(entries):
         total_hours = sum(s["duration"] for s in samples) / 3600.0
         table.add_row(split, str(len(samples)), f"{total_hours:.2f}")
 
-    console.print(table)
+    return table
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ QUECHUA_PATH = DATASETS_PATH / Path("quechua")
 MAPUCHE_ID = "mengct00/Mapudungun_iwslt26"
 MAPUCHE_DATASET_PATH = DATASETS_PATH / Path("mapuche")
 NAHUATL_PATH = DATASETS_PATH / Path("nahuatl")
+AN4_PATH = DATASETS_PATH / Path("an4")
 # Audios with translation are Botanica only
 NAHUATL_AUDIOS_PATH = NAHUATL_PATH / Path("Sound-files-Puebla-Nahuatl")
 NAHUATL_TRANSLATIONS_PATH = (

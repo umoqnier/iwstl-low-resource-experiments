@@ -20,12 +20,8 @@ from data.datamodule import CanaryMultilingualDataModule
 from utils.configs import (
     CANARY_FLASH_MODEL_ID,
     CANARY_MODEL_ID,
-    DATASETS_PATH,
     MANIFESTS_PATH,
-    MAPUCHE_ID,
     MODELS_PATH,
-    NAHUATL_PATH,
-    QUECHUA_PATH,
 )
 from utils.logging_utils import get_logger, setup_logging
 
@@ -47,6 +43,12 @@ from utils.logging_utils import get_logger, setup_logging
 )
 @click.option("--devices", type=int, default=1)
 @click.option("--batch-size", type=int, default=8)
+@click.option(
+    "--batch-duration",
+    type=float,
+    default=60.0,
+    help="Seconds of audio per GPU batch (train). ~45-60 for 12GB, ~120-180 for 24GB.",
+)
 @click.option("--adapter-enc-dim", type=int, default=32)
 @click.option("--adapter-dec-dim", type=int, default=None)
 @click.option("--max-steps", type=int, default=1000)
@@ -60,6 +62,7 @@ def main(
     model_base,
     devices,
     batch_size,
+    batch_duration,
     adapter_enc_dim,
     adapter_dec_dim,
     max_steps,
@@ -136,6 +139,7 @@ def main(
         manifests_dir=manifests_dir,
         num_workers=num_data_workers,
         batch_size=batch_size,
+        batch_duration=batch_duration,
     )
 
     data_loader.setup()
