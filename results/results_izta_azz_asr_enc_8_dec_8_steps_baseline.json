@@ -1,0 +1,34 @@
+{
+  "metrics": {
+    "wer": 2.461081523965588,
+    "bleu": 0.02265036662272633,
+    "chrf2++": 8.123434451385643,
+    "bertscore_precision": 0.8028170466423035,
+    "bertscore_recall": 0.802278995513916,
+    "bertscore_f1": 0.8021355867385864,
+    "bertscore_skipped_empty": 51
+  },
+  "metrics_by_task": {
+    "asr": {
+      "wer": 2.461081523965588,
+      "bleu": 0.02265036662272633,
+      "chrf2++": 8.123434451385643,
+      "bertscore_precision": 0.8028170466423035,
+      "bertscore_recall": 0.802278995513916,
+      "bertscore_f1": 0.8021355867385864,
+      "bertscore_skipped_empty": 51,
+      "num_samples": 550
+    }
+  },
+  "config": {
+    "base_model": "nvidia/canary-1b-v2",
+    "adapter_path": null,
+    "baseline": true,
+    "manifest": "manifests/azz/asr/test_manifest.json",
+    "batch_size": 16,
+    "max_samples": null,
+    "source_lang": "en",
+    "target_lang": "es",
+    "num_samples": 550
+  }
+}
