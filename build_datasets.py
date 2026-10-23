@@ -226,7 +226,7 @@ def build(out, task, max_examples, language_mode, streaming, download):
                 for split in ["train", "validation", "test"]:
                     samples = lang_entries[split]
                     total_hours = sum(s["duration"] for s in samples) / 3600.0
-                    logger.info(split, str(len(samples)), f"{total_hours:.2f}")
+                    logger.info(f"{split}, {len(samples)}, {total_hours:.2f}")
                 progress.remove_task(progress_task)
 
     except Exception as e:
@@ -253,4 +253,9 @@ def build_summary(entries):
 
 
 if __name__ == "__main__":
-    build()
+    try:
+        build()
+    finally:
+        # Bypass Python's graceful shutdown to avoid PyGILState_Release crashes
+        # often caused by background threads in PyArrow/HF Datasets.
+        os._exit(0)

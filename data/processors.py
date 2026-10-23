@@ -103,26 +103,41 @@ class MapugungunProcessor(LanguageProcessor):
         n_train = split_infos["train"].num_examples
         n_val = split_infos["validation"].num_examples
         if self.max_examples:
-            train_take = int(self.max_examples * n_train / (n_train + n_val))
-            eval_take = min(n_val, self.max_examples - train_take)
-            # val/test share the validation draw with SPLITS_RATIOS weights (1:1)
-            test_take = int(
-                eval_take
-                * SPLITS_RATIOS["test"]
-                / (SPLITS_RATIOS["test"] + SPLITS_RATIOS["validation"])
-            )
+            total = self.max_examples
+            test_take = int(total * SPLITS_RATIOS["test"])
+            val_take = int(total * SPLITS_RATIOS["validation"])
+            train_take = total - test_take - val_take
+            val_from_val = min(n_val, val_take)
+            val_from_train = val_take - val_from_val
             split_plan = {
-                "train": [("train", train_take)],
-                "validation": [
-                    ("validation", eval_take - test_take),
-                    ("test", test_take),
+                "train": [
+                    s
+                    for s in [
+                        ("train", train_take),
+                        ("test", test_take),
+                        ("validation", val_from_train),
+                    ]
+                    if s[1] > 0
                 ],
+                "validation": [s for s in [("validation", val_from_val)] if s[1] > 0],
             }
         else:
-            test_take = int(n_train * SPLITS_RATIOS["test"])
+            total = n_train + n_val
+            test_take = int(total * SPLITS_RATIOS["test"])
+            val_take = int(total * SPLITS_RATIOS["validation"])
+            val_from_val = min(n_val, val_take)
+            val_from_train = val_take - val_from_val
             split_plan = {
-                "train": [("train", n_train - test_take), ("test", test_take)],
-                "validation": [("validation", n_val)],
+                "train": [
+                    s
+                    for s in [
+                        ("train", n_train - test_take - val_from_train),
+                        ("test", test_take),
+                        ("validation", val_from_train),
+                    ]
+                    if s[1] > 0
+                ],
+                "validation": [s for s in [("validation", val_from_val)] if s[1] > 0],
             }
         logger.info(f"Split plan={split_plan}")
         entries = {"train": [], "validation": [], "test": []}
@@ -135,9 +150,6 @@ class MapugungunProcessor(LanguageProcessor):
                 f"Split = {src_split} -> "
                 + ", ".join(f"{out}: {n}" for out, n in segments)
             )
-
-            wav_chunks_dir = MAPUCHE_DATASET_PATH / src_split
-            wav_chunks_dir.mkdir(parents=True, exist_ok=True)
 
             if self.streaming:
                 # shortcut: streaming carve is sequential (shuffling needs
@@ -167,7 +179,9 @@ class MapugungunProcessor(LanguageProcessor):
                 if not audio_info:
                     continue
 
-                filepath = wav_chunks_dir / f"map_{src_split}_{idx}.wav"
+                wav_chunks_dir = MAPUCHE_DATASET_PATH / out_split
+                wav_chunks_dir.mkdir(parents=True, exist_ok=True)
+                filepath = wav_chunks_dir / f"map_{out_split}_{src_split}_{idx}.wav"
                 if not filepath.exists():
                     sf.write(filepath, audio_info["array"], audio_info["sampling_rate"])
 
