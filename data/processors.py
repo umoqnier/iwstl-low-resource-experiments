@@ -19,7 +19,7 @@ import wget
 import yaml
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 
-from datasets import load_dataset
+from datasets import load_dataset, load_dataset_builder
 from utils.configs import (
     MAPUCHE_DATASET_PATH,
     NAHUATL_AUDIOS_PATH,
@@ -64,14 +64,12 @@ class MapugungunProcessor(LanguageProcessor):
         out_dir: str,
         dataset_id: str,
         streaming: bool,
-        text_column: str,
         max_examples: int | None = None,
     ):
         super().__init__(name, out_dir, max_examples)
         self.dataset_id = dataset_id
-        self.text_column = text_column
         self.streaming = streaming
-        self.splits = ["train", "validation", "test"]
+        self.seed = 42
 
     def make_splits(self, segments):
         return segments
@@ -79,50 +77,119 @@ class MapugungunProcessor(LanguageProcessor):
     def process(self, task="ast"):
         logger.info(f"Processing {self.name} from HF")
 
-        dataset_dict = load_dataset(self.dataset_id, streaming=self.streaming)
+        try:
+            builder = load_dataset_builder(self.dataset_id)
+        except Exception as e:
+            raise RuntimeError(
+                f"Could not load '{self.dataset_id}'. If it is a gated dataset, "
+                "authenticate first ('hf auth login' or set the HF_TOKEN env var). "
+                f"Original error: {e}"
+            ) from e
+
+        features = builder.info.features
+        split_infos = builder.info.splits
+        if features is None or split_infos is None:
+            raise RuntimeError(f"No metadata (features/splits) for '{self.dataset_id}'")
+        for col in ("audio", "arn", "arn_clean", "spa"):
+            if col not in features:
+                raise ValueError(
+                    f"Expected column '{col}' not found in {self.dataset_id}. "
+                    f"Available columns: {list(features)}"
+                )
+
+        # The HF 'test' split is audio-only, so it is ignored. The output
+        # 'test' split is carved disjointly from validation when max_examples
+        # is set (~1200 rows cover any prototype budget), else from train.
+        n_train = split_infos["train"].num_examples
+        n_val = split_infos["validation"].num_examples
+        if self.max_examples:
+            train_take = int(self.max_examples * n_train / (n_train + n_val))
+            eval_take = min(n_val, self.max_examples - train_take)
+            # val/test share the validation draw with SPLITS_RATIOS weights (1:1)
+            test_take = int(
+                eval_take
+                * SPLITS_RATIOS["test"]
+                / (SPLITS_RATIOS["test"] + SPLITS_RATIOS["validation"])
+            )
+            split_plan = {
+                "train": [("train", train_take)],
+                "validation": [
+                    ("validation", eval_take - test_take),
+                    ("test", test_take),
+                ],
+            }
+        else:
+            test_take = int(n_train * SPLITS_RATIOS["test"])
+            split_plan = {
+                "train": [("train", n_train - test_take), ("test", test_take)],
+                "validation": [("validation", n_val)],
+            }
+        logger.info(f"Split plan={split_plan}")
         entries = {"train": [], "validation": [], "test": []}
-        for split, dataset in dataset_dict.items():
-            logger.info(f"Split = {split}")
+        rng = random.Random(self.seed)
 
-            wav_chunks_dir = MAPUCHE_DATASET_PATH / Path(split)
-            if not wav_chunks_dir.exists():
-                os.makedirs(wav_chunks_dir, exist_ok=True)
+        for src_split, segments in split_plan.items():
+            segments = [(out, n) for out, n in segments if n > 0]
+            total_take = sum(n for _, n in segments)
+            logger.info(
+                f"Split = {src_split} -> "
+                + ", ".join(f"{out}: {n}" for out, n in segments)
+            )
 
-            if self.max_examples is not None:
-                if self.streaming:
-                    dataset = dataset.take(self.max_examples)
-                else:
-                    dataset = dataset.select(
-                        range(min(len(dataset), self.max_examples))
-                    )
+            wav_chunks_dir = MAPUCHE_DATASET_PATH / src_split
+            wav_chunks_dir.mkdir(parents=True, exist_ok=True)
+
+            if self.streaming:
+                # shortcut: streaming carve is sequential (shuffling needs
+                # buffered indices); upgrade if eval-order bias shows up
+                dataset = load_dataset(
+                    self.dataset_id, split=src_split, streaming=True
+                ).take(total_take)
             else:
-                # TODO: Implement this
-                pass
+                ds = load_dataset(self.dataset_id, split=src_split, streaming=False)
+                indices = list(range(min(len(ds), total_take)))
+                rng.shuffle(indices)
+                dataset = ds.select(indices)
 
-            for idx, item in enumerate(dataset):
+            segment_iter = iter(segments)
+            out_split, remaining = next(segment_iter)
+            for idx, item in enumerate(
+                tqdm.tqdm(dataset, total=total_take, desc=f"{self.name} {src_split}")
+            ):
+                if remaining == 0:
+                    nxt = next(segment_iter, None)
+                    if nxt is None:
+                        break
+                    out_split, remaining = nxt
+                remaining -= 1
+
                 audio_info = item.get("audio")
                 if not audio_info:
                     continue
 
-                filepath = wav_chunks_dir / Path(f"{self.name}_{idx}.wav")
+                filepath = wav_chunks_dir / f"map_{src_split}_{idx}.wav"
                 if not filepath.exists():
                     sf.write(filepath, audio_info["array"], audio_info["sampling_rate"])
 
                 duration = len(audio_info["array"]) / audio_info["sampling_rate"]
-                spanish_text = item.get(self.text_column, "")
+                spanish_text = item.get("spa", "")
                 arn_text = item.get("arn", "")
                 arn_clean_text = item.get("arn_clean", "")
-                if spanish_text:
-                    # TODO: Base on task "text" field need to change from spanish to mapuche
-                    entries[split].append(
+                text = (
+                    arn_clean_text or arn_text
+                    if task == "asr"
+                    else normalize_text(spanish_text)
+                )
+                if text:
+                    entries[out_split].append(
                         {
                             "arn": arn_text,
                             "arn_clean": arn_clean_text,
                             "spa": spanish_text,
-                            "text": normalize_text(spanish_text),
+                            "text": text,
                             "duration": duration,
                             "pnc": "no",
-                            "source_lang": "en",
+                            "source_lang": "es" if task == "asr" else "en",
                             "target_lang": "es",
                             "audio_filepath": os.path.abspath(filepath),
                         }

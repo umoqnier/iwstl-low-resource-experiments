@@ -47,7 +47,7 @@ PROCESSOR_MAP = {
         "class": MapugungunProcessor,
         "name": "Mapugungun",
         "out_manifests_subdir": "mapugungun",
-        "kwargs": {"dataset_id": MAPUCHE_ID, "text_column": "spa"},
+        "kwargs": {"dataset_id": MAPUCHE_ID},
     },
     "que": {
         "class": QuechuaProcessor,
@@ -105,13 +105,14 @@ def build(out, task, max_examples, language_mode, streaming, download):
     """
     Build datasets for Canary experiments.
     """
+    out = Path(out)
     setup_logging(
         log_file=f"logs/build_dataset_{language_mode}_{task}.log",
     )
     logger = get_logger(__name__)
     title = (
         "Multilingual Dataset Builder"
-        if language_mode == "multi"
+        if language_mode == "multilang"
         else f"{PROCESSOR_MAP[language_mode]['name']} Dataset Builder"
     )
 
@@ -138,6 +139,7 @@ def build(out, task, max_examples, language_mode, streaming, download):
             console=console,
         ) as progress:
             # 0. Download and Extract datasets if flag is enabled
+            # (downloader/extraction skip codes absent from the registry, e.g. HF-only 'map')
             if download:
                 console.print("[bold blue]🌐 Downloading datasets...[/bold blue]")
                 for lang_code in selected_langs:
@@ -149,6 +151,10 @@ def build(out, task, max_examples, language_mode, streaming, download):
 
                 console.print(
                     "[bold green]✅ Dataset preparation complete![/bold green]\n"
+                )
+            else:
+                console.print(
+                    "[bold green]✅ Dataset doesn't need preparation[/bold green]\n"
                 )
 
             for lang_code in selected_langs:
@@ -179,8 +185,10 @@ def build(out, task, max_examples, language_mode, streaming, download):
                 # 2. Inject streaming flag only if the processor is Mapugungun (or supports streaming)
                 if config["class"] == MapugungunProcessor:
                     processor_args["streaming"] = streaming
+                    processor_args["max_examples"] = max_examples
 
                 console.print(f"[yellow]⚙️ Processing {config['name']}...[/yellow]")
+                logger.info(f"Processor args = {processor_args}")
                 processor = config["class"](**processor_args)
 
                 progress_task = progress.add_task(
@@ -189,7 +197,9 @@ def build(out, task, max_examples, language_mode, streaming, download):
                 lang_entries = processor.process(task=task)
 
                 # Proportional sampling if max_examples is set
-                if max_examples:
+                # (Mapudungun budget is allocated inside the processor using the
+                # real HF split sizes, so don't trim it a second time)
+                if max_examples and config["class"] is not MapugungunProcessor:
                     logger.info(
                         f"Applying proportional sampling (total budget: {max_examples})"
                     )
@@ -213,7 +223,10 @@ def build(out, task, max_examples, language_mode, streaming, download):
 
                 summary = build_summary(lang_entries)
                 console.print(summary)
-                logger.info(str(summary))
+                for split in ["train", "validation", "test"]:
+                    samples = lang_entries[split]
+                    total_hours = sum(s["duration"] for s in samples) / 3600.0
+                    logger.info(split, str(len(samples)), f"{total_hours:.2f}")
                 progress.remove_task(progress_task)
 
     except Exception as e:
