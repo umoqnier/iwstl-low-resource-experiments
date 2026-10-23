@@ -1,0 +1,25 @@
+{
+  "metrics_by_task": {
+    "ast": {
+      "wer": 1.9806223479490805,
+      "bleu": 2.4581269232029563,
+      "chrf2++": 11.146768310283012,
+      "bertscore_precision": 0.8346474170684814,
+      "bertscore_recall": 0.826386034488678,
+      "bertscore_f1": 0.8301738500595093,
+      "bertscore_skipped_empty": 47,
+      "num_samples": 550
+    }
+  },
+  "config": {
+    "base_model": "nvidia/canary-1b-v2",
+    "adapter_path": null,
+    "baseline": true,
+    "manifest": "manifests/map/ast/test_manifest.json",
+    "batch_size": 16,
+    "max_samples": null,
+    "source_lang": "en",
+    "target_lang": "es",
+    "num_samples": 550
+  }
+}
